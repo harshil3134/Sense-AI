@@ -8,8 +8,7 @@ load_dotenv()
 # Initialize Groq client
 api_key = os.environ.get("GROQ_API_KEY")
 if not api_key:
-    print("⚠️  Warning: GROQ_API_KEY not found in environment variables")
-    print("Make sure you have added GROQ_API_KEY to your .env file")
+    print("Warning: GROQ_API_KEY not found in environment variables")
     client = None
 else:
     print("✅ Groq API key loaded successfully")
