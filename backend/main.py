@@ -89,48 +89,100 @@ class StructuredVisionResponse(BaseModel):
     timestamp: datetime
     confidence: float
 
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+vectorstore = Chroma(
+    persist_directory="./vector_db",
+    embedding_function=embeddings,
+    collection_name="visual_memories"
+)
 
 
-def create_memory_document(structured_response: StructuredVisionResponse) -> Document:
-    """Convert structured response to a document for vectorization"""
 
-    # Create comprehensive text representation for vectorization
-    objects_text = ", ".join([f"{obj.name} at {obj.position}" for obj in structured_response.objects])
-    obstacles_text = ", ".join(structured_response.accessibility_info.obstacles)
-    landmarks_text = ", ".join(structured_response.accessibility_info.landmarks)
-
-    content = f"""
-    Scene: {structured_response.summary}
-    Setting: {structured_response.scene_context.setting}
-    Objects: {objects_text}
-    Spatial Layout: {structured_response.spatial_layout}
-    Obstacles: {obstacles_text}
-    Landmarks: {landmarks_text}
-    Detailed Description: {structured_response.detailed_description}
+def create_memory_documents(structured_response: StructuredVisionResponse) -> List[Document]:
     """
+    Break structured response into granular documents for vectorization.
+    Each key (objects, obstacles, landmarks, etc.) becomes its own document.
+    """
+    documents = []
 
-    metadata = {
-        "memory_id": structured_response.memory_id,
-        "timestamp": structured_response.timestamp.isoformat(),
-        "setting": structured_response.scene_context.setting,
-        "lighting": structured_response.scene_context.lighting,
-        "confidence": structured_response.confidence,
-        # Store complex fields as JSON strings if you want to keep them
-        # "objects": json.dumps([obj.dict() for obj in structured_response.objects]),
-        # "accessibility_info": json.dumps(structured_response.accessibility_info.dict())
-    }
+    # Scene summary & layout
+    documents.append(Document(
+        page_content=f"Scene Summary: {structured_response.summary}\nLayout: {structured_response.spatial_layout}",
+        metadata={"type": "scene", "memory_id": structured_response.memory_id, "timestamp": structured_response.timestamp.isoformat()}
+    ))
 
-    return Document(page_content=content.strip(), metadata=metadata)
+    # Detailed description
+    documents.append(Document(
+        page_content=f"Detailed Description: {structured_response.detailed_description}",
+        metadata={"type": "description", "memory_id": structured_response.memory_id}
+    ))
+
+    # Objects as separate documents
+    for obj in structured_response.objects:
+        documents.append(Document(
+            page_content=f"Object: {obj.name}, Position: {obj.position}, Size: {obj.size or 'unknown'}",
+            metadata={
+                "type": "object",
+                "name": obj.name,
+                "position": obj.position,
+                "memory_id": structured_response.memory_id,
+                "confidence": obj.confidence or structured_response.confidence
+            }
+        ))
+
+    # Accessibility info
+    for obs in structured_response.accessibility_info.obstacles:
+        documents.append(Document(
+            page_content=f"Obstacle: {obs}",
+            metadata={"type": "obstacle", "memory_id": structured_response.memory_id}
+        ))
+
+    for lm in structured_response.accessibility_info.landmarks:
+        documents.append(Document(
+            page_content=f"Landmark: {lm}",
+            metadata={"type": "landmark", "memory_id": structured_response.memory_id}
+        ))
+
+    for note in structured_response.accessibility_info.safety_notes:
+        documents.append(Document(
+            page_content=f"Safety Note: {note}",
+            metadata={"type": "safety_note", "memory_id": structured_response.memory_id}
+        ))
+
+    for tip in structured_response.accessibility_info.navigation_tips:
+        documents.append(Document(
+            page_content=f"Navigation Tip: {tip}",
+            metadata={"type": "navigation_tip", "memory_id": structured_response.memory_id}
+        ))
+
+    return documents
+
 
 def store_visual_memory(structured_response: StructuredVisionResponse):
-    """Store structured response in vector database"""
+    """
+    Store structured response in vector database as multiple granular documents.
+    """
     try:
-        document = create_memory_document(structured_response)
-        vectorstore.add_documents([document])
+        documents = create_memory_documents(structured_response)
+        vectorstore.add_documents(documents)
         vectorstore.persist()
-        print(f"Stored visual memory: {structured_response.memory_id}")
+        print(f"Stored {len(documents)} granular documents for memory_id={structured_response.memory_id}")
     except Exception as e:
         print(f"Error storing visual memory: {e}")
+
+
+def retrieve_context(query: str, k: int = 3) -> str:
+    """
+    Retrieve top-k relevant documents for a query and return concatenated context.
+    """
+    try:
+        results = vectorstore.similarity_search(query, k=k)
+        context = "\n".join([doc.page_content for doc in results])
+        print('prev context',results)
+        return context
+    except Exception as e:
+        print(f"Error retrieving context: {e}")
+        return ""
 
 def generate_response_blind(question: str,current_context:str) -> str:
     """
@@ -170,7 +222,7 @@ def generate_response_blind(question: str,current_context:str) -> str:
                 Here is the structured scene data for context:
                 ${current_context}
                 Please generate an audio-friendly response to the user's question."""
-        print('------prompt',prompt)
+        # print('------prompt',prompt)
         # System message for context
         system_message = SystemMessage(
             content=system_prompt
@@ -201,22 +253,31 @@ def generate_response_normal(question: str,current_context:str) -> str:
     Generate answer using Cerebras with RAG context via LangChain.
     """
     try:
+        retrieved_context=retrieve_context(question,5)
+        print("-------",retrieved_context)
+        prompt = f"""
+            User Question: "{question}"
 
-        
-        prompt=f"""
-        User Question: "{question}"
-        Context: {current_context}
-                   """
+            You have access to two types of context:
+            - Current context: a description of the most recent image.
+            - Previous context: descriptions of images and scenes from the past.
+
+            Use whichever context is most relevant to answer the user's question. If the answer is found in previous context, mention where or when it was seen, and refer to specific details (like object names, locations, or titles) to make your answer more natural and helpful.
+            You should never mention unnecessary things like when user asks where is my wallet? ans:I don't know.  dont answer like: wallet is not on desk it may be in your car or ..
+            If the answer is not in current context or retrieved context then there is no need to mention it.
+            If the answer is not found in any context, reply: "I cannot locate it from current context."
+
+            current context: {current_context}
+            previous context: {retrieved_context}
+            """
 
         # System message for context
         system_message = SystemMessage(
-            content=f"""You are a helpful assistant for a sighted user. 
-Answer the user's questions **briefly** in 1-2 sentences. 
-Do NOT provide continuous narration or step-by-step reasoning. 
-If you cannot find the answer from the provided context, respond: "I cannot locate it from current context."
-Focus only on directly answering the question using the context provided.
-
-"""
+            content="""You are a helpful, conversational assistant for a sighted user.
+        Answer the user's questions naturally and briefly (1-2 sentences), using details from the provided context.
+        If you reference something from previous context, mention where or when it was seen.
+        If you cannot find the answer, respond: "I cannot locate it from current context."
+        Do not provide step-by-step reasoning or narration—just a direct, friendly answer."""
         )
 
         # Human message with the composed prompt
@@ -250,120 +311,95 @@ async def health():
 #need to pass question to this function for better answer
 async def create_visual_memory(image_b64: str, memory_id: str,question:str) -> StructuredVisionResponse:
     """Create structured visual memory from image"""
-    
-    if AI_PROVIDER == "groq":
-        # Create output parser for structured response
-        output_parser = PydanticOutputParser(pydantic_object=StructuredVisionResponse)
-        format_instructions = output_parser.get_format_instructions()
-        
-        system_template = """You are an AI assistant specialized in describing images for visually impaired users. 
-        Analyze images with focus on accessibility, safety, and navigation.
-        Provide clear, detailed, and helpful descriptions.
-        
-        {format_instructions}"""
-        
-        system_message = SystemMessage(
-            content=system_template.format(format_instructions=format_instructions)
-        )
-        base_prompt="""Analyze this image in detail for a visually impaired person.
-                    Focus on:
-                    1. Objects and their spatial relationships
-                    2. Environmental context and safety
-                    3. Navigation landmarks and obstacles
-                    4. Detailed descriptions for understanding the scene
-                    
-                    Provide your analysis in the specified JSON format.
-                    
-                 """
-        if question.strip():
-            base_prompt+=f"\n\nUser question: {question}\nAnswer it in the 'answer' field only, keep it short."
-        human_message = HumanMessage(
-            content=[
-                {
-                    "type": "text",
-                    "text": base_prompt
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{image_b64}"
-                    }
-                }
-            ]
-        )
-        
-        llm = ChatGroq(
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
-            temperature=0.7,
-            max_tokens=1024,
-            top_p=1,
-            stream=False,
-            max_retries=2,
-        )
-        
-        llm_response = llm.invoke([system_message, human_message])
-        
-        try:
-            structured_response = output_parser.parse(llm_response.content)
-            structured_response.memory_id = memory_id
-            structured_response.timestamp = datetime.now()
-            print('----- in create visual-----',llm_response.content)
-            return structured_response
-            
-        except Exception as parse_error:
-            print(f"Parse error: {parse_error}")
-            print(f"Raw response: {llm_response.content}")
-            
-            # Fallback structured response
-            return StructuredVisionResponse(
-                memory_id=memory_id,
-                summary="AI-generated image description available",
-                objects=[ObjectDetection(
-                    name="Various objects", 
-                    position="Throughout scene", 
-                    size="Various sizes"
-                )],
-                scene_context=SceneContext(
-                    setting="Scene detected", 
-                    lighting="Lighting present"
-                ),
-                accessibility_info=AccessibilityInfo(
-                    obstacles=["Please review detailed description for obstacles"],
-                    landmarks=["Please review detailed description for landmarks"],
-                    safety_notes=["Exercise general caution"]
-                ),
-                detailed_description=llm_response.content,
-                spatial_layout="Spatial information available in detailed description",
-                timestamp=datetime.now(),
-                confidence=0.75
-            )
 
-    else:  # Cerebras
-        prompt = "Analyze this image for a visually impaired person. Include objects, spatial layout, safety considerations, and navigation aids."
-        description = cerebras_query_vision(prompt, image_b64)
+    # Create output parser for structured response
+    output_parser = PydanticOutputParser(pydantic_object=StructuredVisionResponse)
+    format_instructions = output_parser.get_format_instructions()
+    
+    system_template = """You are an AI assistant specialized in describing images for visually impaired users. 
+    Analyze images with focus on accessibility, safety, and navigation.
+    Provide clear, detailed, and helpful descriptions.
+    
+    {format_instructions}"""
+    
+    system_message = SystemMessage(
+        content=system_template.format(format_instructions=format_instructions)
+    )
+    base_prompt="""Analyze this image in detail for a visually impaired person.
+                Focus on:
+                1. Objects and their spatial relationships
+                2. Environmental context and safety
+                3. Navigation landmarks and obstacles
+                4. Detailed descriptions for understanding the scene
+                
+                Provide your analysis in the specified JSON format.
+                
+            """
+    if question.strip():
+        base_prompt+=f"\n\nUser question: {question}\nAnswer it in the 'answer' field only, keep it short."
+    human_message = HumanMessage(
+        content=[
+            {
+                "type": "text",
+                "text": base_prompt
+            },
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{image_b64}"
+                }
+            }
+        ]
+    )
+    
+    llm = ChatGroq(
+        model="meta-llama/llama-4-scout-17b-16e-instruct",
+        temperature=0.7,
+        max_tokens=1024,
+        top_p=1,
+        stream=False,
+        max_retries=2,
+    )
+    
+    llm_response = llm.invoke([system_message, human_message])
+    
+    try:
+        structured_response = output_parser.parse(llm_response.content)
+        structured_response.memory_id = memory_id
+        structured_response.timestamp = datetime.now()
+        # print('----- in create visual-----',llm_response.content)
+        return structured_response
         
+    except Exception as parse_error:
+        print(f"Parse error: {parse_error}")
+        print(f"Raw response: {llm_response.content}")
+        
+        # Fallback structured response
         return StructuredVisionResponse(
             memory_id=memory_id,
-            summary="Image analyzed using Cerebras AI",
+            summary="AI-generated image description available",
             objects=[ObjectDetection(
-                name="Objects detected", 
-                position="Various positions", 
+                name="Various objects", 
+                position="Throughout scene", 
                 size="Various sizes"
             )],
             scene_context=SceneContext(
                 setting="Scene detected", 
-                lighting="Lighting conditions noted"
+                lighting="Lighting present"
             ),
             accessibility_info=AccessibilityInfo(
-                obstacles=["Refer to detailed description"],
-                landmarks=["Refer to detailed description"],
-                safety_notes=["Exercise caution"]
+                obstacles=["Please review detailed description for obstacles"],
+                landmarks=["Please review detailed description for landmarks"],
+                safety_notes=["Exercise general caution"]
             ),
-            detailed_description=description,
-            spatial_layout="Layout information in detailed description",
+            detailed_description=llm_response.content,
+            spatial_layout="Spatial information available in detailed description",
             timestamp=datetime.now(),
-            confidence=0.85
+            answer="",
+            confidence=0.75
         )
+
+    
 
 
 @app.post("/vision", response_model=VisionResponse)
@@ -382,10 +418,10 @@ async def vision_structured(file: UploadFile = File(...),
         image_b64 = base64.b64encode(contents).decode("utf-8")
         memory_id = str(uuid.uuid4())
         new_memory=await create_visual_memory(image_b64,memory_id,question)
+        store_visual_memory(new_memory)
 
         if(mode.strip()=="blind"):
             print('blind executed')
-      
             response=generate_response_blind(question,current_context=new_memory)
             print('-----',response)
         else:
@@ -398,6 +434,31 @@ async def vision_structured(file: UploadFile = File(...),
     }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
+# "development apis"
+@app.get("/memories")
+async def list_memories():
+    try:
+        # Retrieve up to 50 documents for inspection
+        docs = vectorstore.similarity_search("", k=50)
+        return [
+            {
+                "memory_id": doc.metadata.get("memory_id"),
+                "type": doc.metadata.get("type"),
+                "content": doc.page_content
+            }
+            for doc in docs
+        ]
+    except Exception as e:
+        return {"error": str(e)}
+    
+@app.post("/memories/clear")
+async def clear_memories():
+    try:
+        vectorstore.delete(where={})
+        vectorstore.persist()
+        return {"status": "success", "message": "All memories cleared from vector DB."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
