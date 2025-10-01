@@ -139,30 +139,41 @@ def generate_response_blind(question: str,current_context:str) -> str:
     try:
 
         if question.strip()=="":
-            prompt=f"""You are an accessibility assistant for blind users. 
-            Given the following detailed scene description and object information, rewrite it to be concise, clear, and easy to follow. 
-            Focus on the most important objects, their locations, and any key spatial relationships or safety information. 
-            Avoid unnecessary details and keep the description brief but informative, so a blind person can quickly understand their surroundings and navigate safely.
+            system_prompt="""You are an AI assistant for blind users. Your goal is to help the user navigate and understand their surroundings using the provided scene information. 
 
-            Here is the current output:
-            ${current_context}
+            You will receive structured scene data including objects, spatial layout, accessibility info, and environmental context. 
 
-            Please provide an improved, shorter description suitable for a blind user. """
-        else:
-            prompt=f""" 
-            try to answer question as best and concise 
-                User Question: "{question}"
-                 Here is the current output:
+            Output a clear, concise, and informative description suitable for audio narration. Focus on: 
+            - Key objects and their positions
+            - Obstacles or potential dangers
+            - Landmarks and navigation cues
+            - Important spatial relationships
+
+            Do NOT provide unnecessary details. Do not answer any questions in this mode. Keep the narration short, clear, and actionable for a blind person.
+            """
+            prompt=f"""Here is the structured scene data:
                 ${current_context}
-                
-                   """
+            Please generate an audio-friendly narration describing the scene."""
+        else:
+            system_prompt=f"""
+            You are an AI assistant for blind users. Your goal is to answer questions about the user's surroundings based on the provided structured scene data. 
+
+                Use the scene memory to locate objects, describe spatial relationships, or give step-by-step guidance for physical tasks. Provide concise, actionable, and easy-to-understand answers suitable for audio narration. 
+
+                Focus on:
+                - Answering the user's question accurately using the context
+                - Providing additional navigation or safety details if relevant
+                - Avoid inventing information not present in the structured memory
+                - Keep it brief and clear """
+            prompt=f""" 
+                User Question: "{question}"
+                Here is the structured scene data for context:
+                ${current_context}
+                Please generate an audio-friendly response to the user's question."""
         print('------prompt',prompt)
         # System message for context
         system_message = SystemMessage(
-            content=f"""You are an accessibility assistant for blind users. 
-Your job is to take detailed scene descriptions and rewrite them to be concise, clear, and easy to follow. 
-Focus on the most important objects, their locations, spatial relationships, and any key safety or navigation information. 
-Avoid unnecessary details and keep the description brief but informative, so a blind person can quickly understand their surroundings and navigate safely."""
+            content=system_prompt
         )
 
         # Human message with the composed prompt
