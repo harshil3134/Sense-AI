@@ -85,6 +85,7 @@ class StructuredVisionResponse(BaseModel):
     accessibility_info: AccessibilityInfo = Field(description="Accessibility-specific information")
     detailed_description: str = Field(description="Comprehensive narrative description")
     spatial_layout: str = Field(description="Description of spatial relationships and layout")
+    answer:str=Field(description="Respond this only when user has asked some question else leave it empty strings")
     timestamp: datetime
     confidence: float
 
@@ -137,7 +138,7 @@ def generate_response_blind(question: str,current_context:str) -> str:
     """
     try:
 
-        if question.strip():
+        if question.strip()=="":
             prompt=f"""You are an accessibility assistant for blind users. 
             Given the following detailed scene description and object information, rewrite it to be concise, clear, and easy to follow. 
             Focus on the most important objects, their locations, and any key spatial relationships or safety information. 
@@ -151,9 +152,11 @@ def generate_response_blind(question: str,current_context:str) -> str:
             prompt=f""" 
             try to answer question as best and concise 
                 User Question: "{question}"
+                 Here is the current output:
+                ${current_context}
                 
                    """
-            
+        print('------prompt',prompt)
         # System message for context
         system_message = SystemMessage(
             content=f"""You are an accessibility assistant for blind users. 
@@ -188,13 +191,11 @@ def generate_response_normal(question: str,current_context:str) -> str:
     """
     try:
 
-        if question.strip():
-            prompt=f"""
-    User Question: "{question}"
-    Context: {current_context}
-                   """
-
         
+        prompt=f"""
+        User Question: "{question}"
+        Context: {current_context}
+                   """
 
         # System message for context
         system_message = SystemMessage(
@@ -236,7 +237,7 @@ async def health():
         message="AI Accessibility Assistant is running"
     )
 #need to pass question to this function for better answer
-async def create_visual_memory(image_b64: str, memory_id: str) -> StructuredVisionResponse:
+async def create_visual_memory(image_b64: str, memory_id: str,question:str) -> StructuredVisionResponse:
     """Create structured visual memory from image"""
     
     if AI_PROVIDER == "groq":
@@ -253,12 +254,7 @@ async def create_visual_memory(image_b64: str, memory_id: str) -> StructuredVisi
         system_message = SystemMessage(
             content=system_template.format(format_instructions=format_instructions)
         )
-        
-        human_message = HumanMessage(
-            content=[
-                {
-                    "type": "text",
-                    "text": """Analyze this image in detail for a visually impaired person.
+        base_prompt="""Analyze this image in detail for a visually impaired person.
                     Focus on:
                     1. Objects and their spatial relationships
                     2. Environmental context and safety
@@ -266,7 +262,15 @@ async def create_visual_memory(image_b64: str, memory_id: str) -> StructuredVisi
                     4. Detailed descriptions for understanding the scene
                     
                     Provide your analysis in the specified JSON format.
+                    
                  """
+        if question.strip():
+            base_prompt+=f"\n\nUser question: {question}\nAnswer it in the 'answer' field only, keep it short."
+        human_message = HumanMessage(
+            content=[
+                {
+                    "type": "text",
+                    "text": base_prompt
                 },
                 {
                     "type": "image_url",
@@ -366,12 +370,12 @@ async def vision_structured(file: UploadFile = File(...),
         contents = await file.read()
         image_b64 = base64.b64encode(contents).decode("utf-8")
         memory_id = str(uuid.uuid4())
-        new_memory=await create_visual_memory(image_b64,memory_id)
+        new_memory=await create_visual_memory(image_b64,memory_id,question)
 
         if(mode.strip()=="blind"):
             print('blind executed')
       
-            response=generate_response_blind(question,current_context=new_memory.detailed_description)
+            response=generate_response_blind(question,current_context=new_memory)
             print('-----',response)
         else:
             print('normalexecuted')
