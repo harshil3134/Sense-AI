@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File,Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -95,7 +95,7 @@ vectorstore = Chroma(
     embedding_function=embeddings,
     collection_name="visual_memories"
 )
-
+chat_histories = {}
 
 
 def create_memory_documents(structured_response: StructuredVisionResponse) -> List[Document]:
@@ -184,16 +184,25 @@ def retrieve_context(query: str, k: int = 3) -> str:
         print(f"Error retrieving context: {e}")
         return ""
 
-def generate_response_blind(question: str,current_context:str) -> str:
+def generate_response_blind(question: str,current_context:str, chat_history=None) -> str:
     """
     Generate answer using Cerebras with RAG context via LangChain.
     """
     try:
+        # Format chat history for prompt context (last 5 messages)
+        chat_context = ""
+        if chat_history and len(chat_history) > 0:
+            chat_context = "\nPrevious conversation (last 5 messages):\n"
+            recent_messages = chat_history[-5:] if len(chat_history) > 5 else chat_history
+            for msg in recent_messages:
+                chat_context += f"{msg['role']}: {msg['content']}\n"
 
         if question.strip()=="":
-            system_prompt="""You are an AI assistant for blind users. Your goal is to help the user navigate and understand their surroundings using the provided scene information. 
+            system_prompt=f"""You are an AI assistant for blind users. Your goal is to help the user navigate and understand their surroundings using the provided scene information. 
 
-            You will receive structured scene data including objects, spatial layout, accessibility info, and environmental context. 
+            You will receive structured scene data including objects, spatial layout, accessibility info, and environmental context.
+            
+            {chat_context}
 
             Output a clear, concise, and informative description suitable for audio narration. Focus on: 
             - Key objects and their positions
@@ -248,15 +257,27 @@ def generate_response_blind(question: str,current_context:str) -> str:
     except Exception as e:
         return f"Error generating answer with Cerebras: {e}"
 
-def generate_response_normal(question: str,current_context:str) -> str:
+def generate_response_normal(question: str,current_context:str, chat_history=None) -> str:
     """
     Generate answer using Cerebras with RAG context via LangChain.
     """
     try:
+        # Format chat history for prompt context (last 5 messages)
+        chat_context = ""
+        print("---chat----",chat_history)
+        if chat_history and len(chat_history) > 0:
+            chat_context = "\nPrevious conversation (last 5 messages):\n"
+            recent_messages = chat_history[-5:] if len(chat_history) > 5 else chat_history
+            for msg in recent_messages:
+                chat_context += f"{msg['role']}: {msg['content']}\n"
+
         retrieved_context=retrieve_context(question,5)
         print("-------",retrieved_context)
         prompt = f"""
             User Question: "{question}"
+
+            Previous Conversation Context:
+            {chat_context}
 
             You have access to two types of context:
             - Current context: a description of the most recent image.
@@ -270,13 +291,15 @@ def generate_response_normal(question: str,current_context:str) -> str:
             current context: {current_context}
             previous context: {retrieved_context}
             """
-
+       
+        print("---prompt----",prompt)
         # System message for context
         system_message = SystemMessage(
             content="""You are a helpful, conversational assistant for a sighted user.
         Answer the user's questions naturally and briefly (1-2 sentences), using details from the provided context.
+        If answring doesnt require current or previous context then dont use it. Answer as best as possible
         If you reference something from previous context, mention where or when it was seen.
-        If you cannot find the answer, respond: "I cannot locate it from current context."
+        If you cannot find the answer, respond: "I dont know"
         Do not provide step-by-step reasoning or narration—just a direct, friendly answer."""
         )
 
@@ -402,13 +425,13 @@ async def create_visual_memory(image_b64: str, memory_id: str,question:str) -> S
     
 
 
-@app.post("/vision", response_model=VisionResponse)
-async def vision_structured(file: UploadFile = File(...),
-                            question:str=Form(default=""),
-                            mode:str=Form(default="classic")):
+
+@app.post("/vision")
+async def vision_endpoint(user_id: str = Form(...), chat_id: str = Form(...), question: str = Form(default=""), mode: str = Form(default="classic"), file: UploadFile = File(...)):
     """
     Upload an image and get structured AI vision analysis using LangChain
     """
+    global chat_histories
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
     
@@ -419,21 +442,28 @@ async def vision_structured(file: UploadFile = File(...),
         memory_id = str(uuid.uuid4())
         new_memory=await create_visual_memory(image_b64,memory_id,question)
         store_visual_memory(new_memory)
-
+        # Get chat history for this user/chat
+        user_chat_history = chat_histories.get(user_id, {}).get(chat_id, [])
         if(mode.strip()=="blind"):
             print('blind executed')
-            response=generate_response_blind(question,current_context=new_memory)
+            response=generate_response_blind(question,current_context=new_memory,chat_history=user_chat_history)
             print('-----',response)
         else:
             print('normalexecuted')
-            response=generate_response_normal(question,current_context=new_memory)
-        return {
-        "description": response,
-        "timestamp": datetime.now(),
-        "confidence": 0.9  # or any confidence value you want
-    }
+            response=generate_response_normal(question,current_context=new_memory,chat_history=user_chat_history)
+        
+        # Update chat history
+        if user_id not in chat_histories:
+            chat_histories[user_id] = {}
+        if chat_id not in chat_histories[user_id]:
+            chat_histories[user_id][chat_id] = []
+        chat_histories[user_id][chat_id].append({"role": "user", "content": question})
+        chat_histories[user_id][chat_id].append({"role": "assistant", "content": response})
+        
+        return {"answer": response, "chat_history": chat_histories[user_id][chat_id]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
+
 # "development apis"
 @app.get("/memories")
 async def list_memories():
@@ -454,11 +484,18 @@ async def list_memories():
 @app.post("/memories/clear")
 async def clear_memories():
     try:
-        vectorstore.delete(where={})
+        vectorstore.delete(where={'memory_id': {'$ne': ''}})  # Deletes all documents where memory_id is not empty
         vectorstore.persist()
         return {"status": "success", "message": "All memories cleared from vector DB."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+@app.get("/chat-history")
+async def chat_history():
+    try:
+        return {"status":"success","chat":chat_histories}
+    except Exception as e:
+        return {"status":"error","message":str(e)}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
