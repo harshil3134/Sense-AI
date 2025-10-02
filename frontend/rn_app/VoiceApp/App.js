@@ -86,20 +86,118 @@ const CameraPage = ({ onNavigate }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recording, setRecording] = useState(null);
   const [audioPermission, setAudioPermission] = useState(null);
+  const [photoCount, setPhotoCount] = useState(0);
   const cameraRef = useRef(null);
   
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
+  // Request permissions
   React.useEffect(() => {
     (async () => {
+      console.log('🔐 Requesting permissions...');
       if (!cameraPermission?.granted) {
         await requestCameraPermission();
       }
       
       const { status } = await Audio.requestPermissionsAsync();
       setAudioPermission(status === 'granted');
+      console.log('✅ Permissions granted - Camera:', cameraPermission?.granted, 'Audio:', status === 'granted');
     })();
   }, []);
+
+  // Auto-capture photos every 4 seconds
+  React.useEffect(() => {
+    console.log('🎬 Camera page mounted');
+    console.log('🔍 Checking permissions - Camera:', cameraPermission?.granted, 'Audio:', audioPermission);
+    
+    let captureInterval = null;
+    
+    const startCapturing = async () => {
+      console.log('📸 Starting auto-capture (every 4 seconds)...');
+      
+      // Wait for camera to be ready
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      console.log('🎥 Camera should be ready, starting captures...');
+      
+      // Capture first photo
+      await capturePhoto();
+      
+      // Then capture every 4 seconds
+      captureInterval = setInterval(async () => {
+        await capturePhoto();
+      }, 4000);
+    };
+
+    if (cameraPermission?.granted && audioPermission) {
+      console.log('✅ All permissions granted, starting capture loop');
+      startCapturing();
+    } else {
+      console.log('⚠️ Waiting for permissions...');
+    }
+
+    return () => {
+      if (captureInterval) {
+        clearInterval(captureInterval);
+        console.log('🛑 Stopped auto-capture');
+      }
+    };
+  }, [cameraPermission?.granted, audioPermission]);
+
+  const capturePhoto = async () => {
+    console.log('📷 capturePhoto function called');
+    
+    if (!cameraRef.current) {
+      console.log('⚠️ Camera ref is NULL - camera not ready');
+      return;
+    }
+
+    console.log('✅ Camera ref exists, attempting to take picture...');
+
+    try {
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.8,
+        base64: false,
+      });
+
+      console.log('📸 Photo object received:', photo ? 'YES' : 'NO');
+
+      if (!photo || !photo.uri) {
+        console.error('❌ No photo URI returned');
+        return;
+      }
+
+      console.log('📍 Photo URI:', photo.uri);
+
+      // Generate filename with timestamp
+      const timestamp = Date.now();
+      const fileName = `photo_${timestamp}.jpg`;
+      const cacheUri = `${FileSystem.cacheDirectory}${fileName}`;
+
+      console.log('💾 Copying to cache:', cacheUri);
+
+      // Copy photo to cache directory
+      await FileSystem.copyAsync({
+        from: photo.uri,
+        to: cacheUri,
+      });
+
+      const newCount = photoCount + 1;
+      setPhotoCount(newCount);
+
+      // Log to console
+      console.log('✅ Photo captured successfully!');
+      console.log(`   📁 File: ${fileName}`);
+      console.log(`   📍 Cache Path: ${cacheUri}`);
+      console.log(`   📊 Total photos: ${newCount}`);
+      console.log('========================================');
+
+    } catch (error) {
+      console.error('❌ ERROR in capturePhoto:');
+      console.error('   Message:', error.message);
+      console.error('   Full error:', JSON.stringify(error, null, 2));
+    }
+  };
 
   const startRecording = async () => {
     try {
@@ -201,6 +299,11 @@ const CameraPage = ({ onNavigate }) => {
             <Text style={styles.modeText}>
               Mode: {mode === 'default' ? 'Default' : 'Alternate'}
             </Text>
+          </View>
+
+          {/* Photo Counter */}
+          <View style={styles.photoCounter}>
+            <Text style={styles.photoCounterText}>📸 {photoCount}</Text>
           </View>
         </CameraView>
       </View>
@@ -343,6 +446,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
+  },
+  photoCounter: {
+    position: 'absolute',
+    top: 110,
+    right: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  photoCounterText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   permissionText: {
     color: '#fff',
