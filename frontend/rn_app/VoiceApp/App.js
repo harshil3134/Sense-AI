@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, createContext, useContext } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -10,9 +10,80 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 
-const CameraAudioApp = () => {
-  const [isRecording, setIsRecording] = useState(false);
+// Create a context for mode state
+const ModeContext = createContext();
+
+// Main App Component with Mode Provider
+const App = () => {
   const [mode, setMode] = useState('default');
+  const [currentPage, setCurrentPage] = useState('home');
+
+  const toggleMode = () => {
+    setMode(mode === 'default' ? 'alternate' : 'default');
+  };
+
+  return (
+    <ModeContext.Provider value={{ mode, toggleMode }}>
+      {currentPage === 'home' ? (
+        <HomePage onNavigate={() => setCurrentPage('camera')} />
+      ) : (
+        <CameraPage onNavigate={() => setCurrentPage('home')} />
+      )}
+    </ModeContext.Provider>
+  );
+};
+
+// Home Page Component
+const HomePage = ({ onNavigate }) => {
+  const { mode, toggleMode } = useContext(ModeContext);
+
+  return (
+    <View style={[styles.homeContainer, mode === 'alternate' && styles.alternateBg]}>
+      {/* Mode Indicator */}
+      <View style={styles.homeHeader}>
+        <View style={styles.modeIndicator}>
+          <Text style={styles.modeText}>
+            Mode: {mode === 'default' ? 'Default' : 'Alternate'}
+          </Text>
+        </View>
+      </View>
+
+      {/* Center Content */}
+      <View style={styles.centerContent}>
+        <Text style={styles.title}>Camera Audio Recorder</Text>
+        <Text style={styles.subtitle}>
+          Record audio with live camera preview
+        </Text>
+        
+        {/* Open Camera Button */}
+        <TouchableOpacity
+          style={[styles.openButton, mode === 'alternate' && styles.openButtonAlternate]}
+          onPress={onNavigate}
+        >
+          <Text style={styles.openButtonText}>📷</Text>
+          <Text style={styles.openButtonLabel}>Open Camera</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Mode Toggle Button */}
+      <View style={styles.homeFooter}>
+        <TouchableOpacity
+          style={styles.toggleButton}
+          onPress={toggleMode}
+        >
+          <Text style={styles.toggleButtonText}>
+            {mode === 'default' ? '⚡' : '🌙'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+// Camera Page Component
+const CameraPage = ({ onNavigate }) => {
+  const { mode, toggleMode } = useContext(ModeContext);
+  const [isRecording, setIsRecording] = useState(false);
   const [recording, setRecording] = useState(null);
   const [audioPermission, setAudioPermission] = useState(null);
   const cameraRef = useRef(null);
@@ -25,7 +96,6 @@ const CameraAudioApp = () => {
         await requestCameraPermission();
       }
       
-      // Request audio permissions
       const { status } = await Audio.requestPermissionsAsync();
       setAudioPermission(status === 'granted');
     })();
@@ -60,11 +130,9 @@ const CameraAudioApp = () => {
       
       const uri = recording.getURI();
       
-      // Create a permanent file path
       const fileName = `recording_${Date.now()}.m4a`;
       const permanentUri = `${FileSystem.documentDirectory}${fileName}`;
       
-      // Move the recording to permanent storage
       await FileSystem.moveAsync({
         from: uri,
         to: permanentUri,
@@ -81,10 +149,6 @@ const CameraAudioApp = () => {
       console.error('Failed to stop recording:', error);
       Alert.alert('Error', 'Failed to stop recording');
     }
-  };
-
-  const toggleMode = () => {
-    setMode(mode === 'default' ? 'alternate' : 'default');
   };
 
   if (!cameraPermission || audioPermission === null) {
@@ -124,8 +188,16 @@ const CameraAudioApp = () => {
           facing="back"
           ref={cameraRef}
         >
+          {/* Back Button */}
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={onNavigate}
+          >
+            <Text style={styles.backButtonText}>← Back</Text>
+          </TouchableOpacity>
+
           {/* Mode Indicator */}
-          <View style={styles.modeIndicator}>
+          <View style={styles.modeIndicatorCamera}>
             <Text style={styles.modeText}>
               Mode: {mode === 'default' ? 'Default' : 'Alternate'}
             </Text>
@@ -174,6 +246,70 @@ const CameraAudioApp = () => {
 };
 
 const styles = StyleSheet.create({
+  // Home Page Styles
+  homeContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  alternateBg: {
+    backgroundColor: '#1a1a2e',
+  },
+  homeHeader: {
+    paddingTop: 60,
+    paddingHorizontal: 20,
+  },
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#aaa',
+    textAlign: 'center',
+    marginBottom: 60,
+  },
+  openButton: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: '#ff4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#ff4444',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  openButtonAlternate: {
+    backgroundColor: '#6c5ce7',
+    shadowColor: '#6c5ce7',
+  },
+  openButtonText: {
+    fontSize: 48,
+    marginBottom: 8,
+  },
+  openButtonLabel: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  homeFooter: {
+    paddingBottom: 40,
+    alignItems: 'flex-end',
+    paddingHorizontal: 30,
+  },
+  
+  // Camera Page Styles
   container: {
     flex: 1,
     backgroundColor: '#000',
@@ -185,6 +321,29 @@ const styles = StyleSheet.create({
   camera: {
     flex: 1,
   },
+  backButton: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  backButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modeIndicatorCamera: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
   permissionText: {
     color: '#fff',
     fontSize: 16,
@@ -193,10 +352,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   modeIndicator: {
-    position: 'absolute',
-    top: 40,
-    left: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
@@ -291,4 +448,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default CameraAudioApp;
+export default App;
