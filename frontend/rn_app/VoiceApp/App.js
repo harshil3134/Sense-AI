@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Alert,
 } from 'react-native';
+import { API_URL } from './config';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -15,11 +16,14 @@ const ModeContext = createContext();
 
 // Main App Component with Mode Provider
 const App = () => {
-  const [mode, setMode] = useState('default');
+  console.log('🚀 App initializing...');
+  console.log('🌐 API URL:', API_URL);
+  
+  const [mode, setMode] = useState('normal');
   const [currentPage, setCurrentPage] = useState('home');
 
   const toggleMode = () => {
-    setMode(mode === 'default' ? 'alternate' : 'default');
+    setMode(mode === 'normal' ? 'blind' : 'normal');
   };
 
   return (
@@ -38,7 +42,7 @@ const HomePage = ({ onNavigate }) => {
   const { mode, toggleMode } = useContext(ModeContext);
 
   return (
-    <View style={[styles.homeContainer, mode === 'alternate' && styles.alternateBg]}>
+    <View style={[styles.homeContainer, mode === 'blind' && styles.blindModeBg]}>
       {/* Mode Indicator */}
       <View style={styles.homeHeader}>
         <View style={styles.modeIndicator}>
@@ -157,7 +161,7 @@ const CameraPage = ({ onNavigate }) => {
     try {
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.8,
-        base64: false,
+        base64: true, // Enable base64 encoding
       });
 
       console.log('📸 Photo object received:', photo ? 'YES' : 'NO');
@@ -182,6 +186,80 @@ const CameraPage = ({ onNavigate }) => {
         to: cacheUri,
       });
 
+      // Create form data for API request
+      const formData = new FormData();
+      formData.append('file', {
+        uri: photo.uri,
+        type: 'image/jpeg',
+        name: fileName,
+      });
+      formData.append('user_id', 'user123');
+      formData.append('chat_id', 'chat123');
+      formData.append('mode', mode);
+      formData.append('question', 'what around tell me');
+
+      // Detailed API call logging
+      console.log('📡 API Call Details:');
+      console.log(`🔗 URL: ${API_URL}/vision`);
+      console.log('� FormData contents:', {
+        fileName: fileName,
+        fileType: 'image/jpeg',
+        fileSize: photo.base64?.length || 'unknown',
+        mode: mode,
+        user_id: 'user123',
+        chat_id: 'chat123'
+      });
+
+      // Send to backend API
+      console.log('🚀 Starting API request...');
+      try {
+        console.log('📤 Sending POST request...');
+        const response = await fetch(`${API_URL}/vision`, {
+          method: 'POST',
+          body: formData,
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+
+        console.log('📥 Response received:');
+        console.log('   Status:', response.status);
+        console.log('   Status Text:', response.statusText);
+        console.log('   Headers:', JSON.stringify(Object.fromEntries([...response.headers]), null, 2));
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ API Error Details:');
+          console.error('   Status:', response.status);
+          console.error('   Status Text:', response.statusText);
+          console.error('   Response:', errorText);
+          throw new Error(`HTTP error! status: ${response.status}\n${errorText}`);
+        }
+
+        const result = await response.json();
+        console.log('✅ API Response:', JSON.stringify(result, null, 2));
+        
+        // Show alert with AI response
+        Alert.alert(
+          'AI Analysis',
+          result.answer || 'No response from AI',
+          [{ text: 'OK' }]
+        );
+
+      } catch (error) {
+        console.error('❌ API Call Failed:');
+        console.error('   Error name:', error.name);
+        console.error('   Error message:', error.message);
+        console.error('   Stack trace:', error.stack);
+        console.error('   Full error:', JSON.stringify(error, null, 2));
+        Alert.alert(
+          'API Error',
+          `Failed to send photo: ${error.message}`,
+          [{ text: 'OK' }]
+        );
+      }
+
       const newCount = photoCount + 1;
       setPhotoCount(newCount);
 
@@ -196,6 +274,11 @@ const CameraPage = ({ onNavigate }) => {
       console.error('❌ ERROR in capturePhoto:');
       console.error('   Message:', error.message);
       console.error('   Full error:', JSON.stringify(error, null, 2));
+      Alert.alert(
+        'Error',
+        'Failed to capture photo',
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -297,7 +380,7 @@ const CameraPage = ({ onNavigate }) => {
           {/* Mode Indicator */}
           <View style={styles.modeIndicatorCamera}>
             <Text style={styles.modeText}>
-              Mode: {mode === 'default' ? 'Default' : 'Alternate'}
+              Mode: {mode === 'normal' ? 'Normal' : 'Blind'}
             </Text>
           </View>
 
