@@ -25,6 +25,36 @@ from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.vectorstores import Chroma
 import requests
 from typing import Optional
+import tempfile
+
+def cartesia_tts_bytes(text: str, output_file: str):
+    url = "https://api.cartesia.ai/tts/bytes"
+    headers = {
+        "Authorization": f"Bearer {CARTESIA_API_KEY}",
+        "Cartesia-Version": "2025-04-16",
+        "Content-Type": "application/json",
+        "Accept": "application/octet-stream",
+    }
+    payload = {
+        "transcript": text,
+        "model_id": "sonic-2",
+        "voice": {
+            "mode": "id",
+            "id": "694f9389-aac1-45b6-b726-9d9369183238"
+        },
+        "language": "hi",
+        "output_format": {
+            "container": "wav",
+            "encoding": "pcm_f32le",
+            "sample_rate": 44100
+        }
+    }
+
+    resp = requests.post(url, headers=headers, json=payload)
+    resp.raise_for_status()
+
+    with open(output_file, "wb") as f:
+        f.write(resp.content)
 
 # Configuration - choose your AI provider
 AI_PROVIDER = os.getenv("AI_PROVIDER", "cerebras").lower()  # "cerebras" or "groq"
@@ -89,7 +119,8 @@ class StructuredVisionResponse(BaseModel):
     accessibility_info: AccessibilityInfo = Field(description="Accessibility-specific information")
     detailed_description: str = Field(description="Comprehensive narrative description")
     spatial_layout: str = Field(description="Description of spatial relationships and layout")
-    answer:str=Field(description="Respond this only when user has asked some question else leave it empty strings")
+    answer: str = Field(description="Respond this only when user has asked some question else leave it empty strings")
+    audio_base64: Optional[str] = Field(description="Base64 encoded audio response", default=None)
     timestamp: datetime
     confidence: float
 
@@ -427,6 +458,28 @@ async def create_visual_memory(image_b64: str, memory_id: str,question:str) -> S
         )
 
     
+def generate_audio_response(text: str) -> str:
+    """Generate audio from text and return as base64 string"""
+    try:
+        # Create a temporary file
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+            temp_path = temp_file.name
+            
+        # Generate audio file
+        cartesia_tts_bytes(text, temp_path)
+        
+        # Read and convert to base64
+        with open(temp_path, 'rb') as audio_file:
+            audio_base64 = base64.b64encode(audio_file.read()).decode('utf-8')
+            
+        # Clean up
+        os.unlink(temp_path)
+        
+        return audio_base64
+    except Exception as e:
+        print(f"Error generating audio: {str(e)}")
+        return None
+
 def transcribe_audio_file(audio_bytes: bytes, model: str = "ink-whisper", language: str = "en"):
     """
     Transcribe audio bytes using Cartesia API
@@ -515,7 +568,14 @@ async def vision_endpoint(user_id: str = Form(...), chat_id: str = Form(...), qu
         chat_histories[user_id][chat_id].append({"role": "user", "content": final_question})
         chat_histories[user_id][chat_id].append({"role": "assistant", "content": response})
         
-        return {"answer": response, "chat_history": chat_histories[user_id][chat_id]}
+        # Generate audio response
+        audio_base64 = generate_audio_response(response)
+        
+        return {
+            "answer": response, 
+            "audio_base64": audio_base64,
+            "chat_history": chat_histories[user_id][chat_id]
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
 

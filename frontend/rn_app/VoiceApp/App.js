@@ -91,6 +91,7 @@ const CameraPage = ({ onNavigate }) => {
   const [recording, setRecording] = useState(null);
   const [audioPermission, setAudioPermission] = useState(null);
   const [photoCount, setPhotoCount] = useState(0);
+  const [capturedPhotoUri, setCapturedPhotoUri] = useState(null); // Store photo URI for recording
   const cameraRef = useRef(null);
   
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -109,226 +110,289 @@ const CameraPage = ({ onNavigate }) => {
     })();
   }, []);
 
-  // Auto-capture photos every 4 seconds
-  React.useEffect(() => {
-    console.log('🎬 Camera page mounted');
-    console.log('🔍 Checking permissions - Camera:', cameraPermission?.granted, 'Audio:', audioPermission);
-    
-    let captureInterval = null;
-    
-    const startCapturing = async () => {
-      console.log('📸 Starting auto-capture (every 4 seconds)...');
-      
-      // Wait for camera to be ready
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      console.log('🎥 Camera should be ready, starting captures...');
-      
-      // Capture first photo
-      await capturePhoto();
-      
-      // Then capture every 4 seconds
-      captureInterval = setInterval(async () => {
-        await capturePhoto();
-      }, 4000);
-    };
+  // Removed auto-capture functionality - only capture when recording starts
 
-    if (cameraPermission?.granted && audioPermission) {
-      console.log('✅ All permissions granted, starting capture loop');
-      startCapturing();
-    } else {
-      console.log('⚠️ Waiting for permissions...');
-    }
+  // Remove the old capturePhoto function since we don't need auto-capture anymore
 
-    return () => {
-      if (captureInterval) {
-        clearInterval(captureInterval);
-        console.log('🛑 Stopped auto-capture');
-      }
-    };
-  }, [cameraPermission?.granted, audioPermission]);
-
-  const capturePhoto = async () => {
-    console.log('📷 capturePhoto function called');
+  // Capture photo for recording (separate from auto-capture)
+  const capturePhotoForRecording = async () => {
+    console.log('📷 Capturing photo for recording...');
     
     if (!cameraRef.current) {
       console.log('⚠️ Camera ref is NULL - camera not ready');
-      return;
+      return null;
     }
-
-    console.log('✅ Camera ref exists, attempting to take picture...');
 
     try {
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.8,
-        base64: true, // Enable base64 encoding
+        base64: true,
       });
-
-      console.log('📸 Photo object received:', photo ? 'YES' : 'NO');
 
       if (!photo || !photo.uri) {
         console.error('❌ No photo URI returned');
-        return;
+        return null;
       }
 
-      console.log('📍 Photo URI:', photo.uri);
-
-      // Generate filename with timestamp
       const timestamp = Date.now();
-      const fileName = `photo_${timestamp}.jpg`;
+      const fileName = `recording_photo_${timestamp}.jpg`;
       const cacheUri = `${FileSystem.cacheDirectory}${fileName}`;
 
-      console.log('💾 Copying to cache:', cacheUri);
-
-      // Copy photo to cache directory
       await FileSystem.copyAsync({
         from: photo.uri,
         to: cacheUri,
       });
 
-      // Create form data for API request
-      const formData = new FormData();
-      formData.append('file', {
-        uri: photo.uri,
-        type: 'image/jpeg',
-        name: fileName,
-      });
-      formData.append('user_id', 'user123');
-      formData.append('chat_id', 'chat123');
-      formData.append('mode', mode);
-      formData.append('question', 'what around tell me');
-
-      // Detailed API call logging
-      console.log('📡 API Call Details:');
-      console.log(`🔗 URL: ${API_URL}/vision`);
-      console.log('� FormData contents:', {
-        fileName: fileName,
-        fileType: 'image/jpeg',
-        fileSize: photo.base64?.length || 'unknown',
-        mode: mode,
-        user_id: 'user123',
-        chat_id: 'chat123'
-      });
-
-      // Send to backend API
-      console.log('🚀 Starting API request...');
-      try {
-        console.log('📤 Sending POST request...');
-        const response = await fetch(`${API_URL}/vision`, {
-          method: 'POST',
-          body: formData,
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'multipart/form-data',
-          },
-        });
-
-        console.log('📥 Response received:');
-        console.log('   Status:', response.status);
-        console.log('   Status Text:', response.statusText);
-        console.log('   Headers:', JSON.stringify(Object.fromEntries([...response.headers]), null, 2));
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('❌ API Error Details:');
-          console.error('   Status:', response.status);
-          console.error('   Status Text:', response.statusText);
-          console.error('   Response:', errorText);
-          throw new Error(`HTTP error! status: ${response.status}\n${errorText}`);
-        }
-
-        const result = await response.json();
-        console.log('✅ API Response:', JSON.stringify(result, null, 2));
-        
-        // Show alert with AI response
-        Alert.alert(
-          'AI Analysis',
-          result.answer || 'No response from AI',
-          [{ text: 'OK' }]
-        );
-
-      } catch (error) {
-        console.error('❌ API Call Failed:');
-        console.error('   Error name:', error.name);
-        console.error('   Error message:', error.message);
-        console.error('   Stack trace:', error.stack);
-        console.error('   Full error:', JSON.stringify(error, null, 2));
-        Alert.alert(
-          'API Error',
-          `Failed to send photo: ${error.message}`,
-          [{ text: 'OK' }]
-        );
-      }
-
-      const newCount = photoCount + 1;
-      setPhotoCount(newCount);
-
-      // Log to console
-      console.log('✅ Photo captured successfully!');
-      console.log(`   📁 File: ${fileName}`);
-      console.log(`   📍 Cache Path: ${cacheUri}`);
-      console.log(`   📊 Total photos: ${newCount}`);
-      console.log('========================================');
+      console.log('✅ Photo captured for recording:', cacheUri);
+      return cacheUri;
 
     } catch (error) {
-      console.error('❌ ERROR in capturePhoto:');
-      console.error('   Message:', error.message);
-      console.error('   Full error:', JSON.stringify(error, null, 2));
-      Alert.alert(
-        'Error',
-        'Failed to capture photo',
-        [{ text: 'OK' }]
-      );
+      console.error('❌ ERROR capturing photo for recording:', error.message);
+      return null;
     }
   };
 
   const startRecording = async () => {
     try {
+      console.log('🎙️ Starting recording...');
+      
+      // Make sure no recording is in progress
+      if (recording) {
+        console.log('Recording already exists, stopping it first...');
+        await recording.stopAndUnloadAsync();
+        setRecording(null);
+      }
+      
+      // Capture photo when recording starts
+      const photoUri = await capturePhotoForRecording();
+      setCapturedPhotoUri(photoUri);
+      
+      if (!photoUri) {
+        Alert.alert('Warning', 'Failed to capture photo, but recording will continue');
+      }
+
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
 
-      const { recording } = await Audio.Recording.createAsync(
+      const { recording: newRecording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
       
-      setRecording(recording);
+      setRecording(newRecording);
       setIsRecording(true);
+      console.log('✅ Recording started');
     } catch (error) {
-      console.error('Failed to start recording:', error);
-      Alert.alert('Error', 'Failed to start audio recording');
+      console.error('❌ Failed to start recording:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      Alert.alert('Error', `Failed to start audio recording: ${error.message}`);
     }
   };
 
   const stopRecording = async () => {
     try {
+      console.log('🛑 Stopping recording...');
+      
+      if (!recording) {
+        console.log('⚠️ No recording to stop');
+        Alert.alert('Error', 'No active recording found');
+        return;
+      }
+      
       setIsRecording(false);
+      
+      const audioUri = recording.getURI();
+      console.log('📍 Audio URI before stop:', audioUri);
+      
       await recording.stopAndUnloadAsync();
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
       });
       
-      const uri = recording.getURI();
-      
       const fileName = `recording_${Date.now()}.m4a`;
       const permanentUri = `${FileSystem.documentDirectory}${fileName}`;
       
+      console.log('💾 Moving audio from:', audioUri);
+      console.log('💾 Moving audio to:', permanentUri);
+      
       await FileSystem.moveAsync({
-        from: uri,
+        from: audioUri,
         to: permanentUri,
       });
       
-      setRecording(null);
+      console.log('📁 Audio saved:', permanentUri);
+      console.log('📁 Photo URI:', capturedPhotoUri);
       
+      // Clear recording state before sending to API
+      const photoToSend = capturedPhotoUri;
+      setRecording(null);
+      setCapturedPhotoUri(null);
+      
+      // Send both image and audio to API
+      await sendRecordingToAPI(photoToSend, permanentUri);
+      
+    } catch (error) {
+      console.error('❌ Failed to stop recording:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      Alert.alert('Error', `Failed to stop recording: ${error.message}`);
+      // Clean up state even on error
+      setRecording(null);
+      setCapturedPhotoUri(null);
+    }
+  };
+
+  const playResponseAudio = async (base64Audio) => {
+    try {
+      console.log('🔊 Playing response audio...');
+      // Create a temporary file from base64 audio
+      const audioFile = `${FileSystem.cacheDirectory}response_${Date.now()}.wav`;
+      await FileSystem.writeAsStringAsync(audioFile, base64Audio, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      console.log('📁 Temporary audio file created:', audioFile);
+
+      // Play the audio
+      const sound = new Audio.Sound();
+      await sound.loadAsync({ uri: audioFile });
+      await sound.playAsync();
+
+      // Cleanup after playing
+      sound.setOnPlaybackStatusUpdate(async (status) => {
+        if (status.didJustFinish) {
+          await sound.unloadAsync();
+          await FileSystem.deleteAsync(audioFile);
+          console.log('🧹 Cleaned up temporary audio file');
+        }
+      });
+    } catch (error) {
+      console.error('❌ Failed to play response audio:', error);
+      Alert.alert('Error', 'Failed to play audio response');
+    }
+  };
+
+  const sendRecordingToAPI = async (photoUri, audioUri) => {
+    try {
+      console.log('📡 Sending recording to API...');
+      console.log('   Photo URI:', photoUri);
+      console.log('   Audio URI:', audioUri);
+      console.log('   API URL:', API_URL);
+
+      if (!photoUri) {
+        Alert.alert('Error', 'No photo captured. Cannot send to API.');
+        return;
+      }
+
+      if (!audioUri) {
+        Alert.alert('Error', 'No audio recorded. Cannot send to API.');
+        return;
+      }
+
+      // Verify files exist
+      const photoInfo = await FileSystem.getInfoAsync(photoUri);
+      const audioInfo = await FileSystem.getInfoAsync(audioUri);
+      
+      console.log('📸 Photo exists:', photoInfo.exists, 'Size:', photoInfo.size);
+      console.log('🎙️ Audio exists:', audioInfo.exists, 'Size:', audioInfo.size);
+
+      if (!photoInfo.exists || !audioInfo.exists) {
+        Alert.alert('Error', 'Files not found on device');
+        return;
+      }
+
+      // Create form data with proper file objects
+      const formData = new FormData();
+      
+      // Add photo with proper mime type
+      const photoBlob = {
+        uri: photoUri,
+        type: 'image/jpeg',
+        name: 'photo.jpg',
+      };
+      formData.append('file', photoBlob);
+      
+      // Add audio with proper mime type
+      const audioBlob = {
+        uri: audioUri,
+        type: 'audio/m4a',
+        name: 'audio.m4a',
+      };
+      formData.append('audio', audioBlob);
+      
+      // Add other parameters as strings
+      formData.append('user_id', 'user123');
+      formData.append('chat_id', 'chat123');
+      formData.append('mode', mode);
+      formData.append('question', ''); // Empty question means use audio transcription
+
+      console.log('📦 FormData prepared');
+      console.log('📤 Sending request to:', `${API_URL}/vision`);
+
+      // Send request with proper configuration
+      const response = await fetch(`${API_URL}/vision`, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Accept': 'application/json',
+          // Don't set Content-Type - let fetch handle it for FormData
+        },
+      });
+
+      console.log('📥 Response received');
+      console.log('   Status:', response.status);
+      console.log('   Status Text:', response.statusText);
+
+      // Read response text first for debugging
+      const responseText = await response.text();
+      console.log('   Response body:', responseText);
+
+      if (!response.ok) {
+        console.error('❌ API Error Response:', responseText);
+        throw new Error(`HTTP error! status: ${response.status}\nResponse: ${responseText}`);
+      }
+
+      // Try to parse JSON
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('❌ Failed to parse JSON:', parseError);
+        throw new Error(`Invalid JSON response: ${responseText.substring(0, 100)}`);
+      }
+
+      console.log('✅ API Response:', JSON.stringify(result, null, 2));
+      
+      // Play audio response if available
+      if (result.audio_base64) {
+        await playResponseAudio(result.audio_base64);
+      }
+
       Alert.alert(
-        'Recording Saved',
-        `Audio saved to: ${permanentUri}`,
+        'Recording Processed',
+        result.answer || 'Recording sent successfully!',
         [{ text: 'OK' }]
       );
+
     } catch (error) {
-      console.error('Failed to stop recording:', error);
-      Alert.alert('Error', 'Failed to stop recording');
+      console.error('❌ Failed to send recording to API:');
+      console.error('   Error name:', error.name);
+      console.error('   Error message:', error.message);
+      console.error('   Stack:', error.stack);
+      
+      // Show more user-friendly error messages
+      let errorMessage = error.message;
+      if (error.message.includes('Network request failed')) {
+        errorMessage = 'Network error. Please check your internet connection and API URL.';
+      } else if (error.message.includes('timeout')) {
+        errorMessage = 'Request timeout. The server took too long to respond.';
+      }
+      
+      Alert.alert(
+        'API Error',
+        errorMessage,
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -384,9 +448,9 @@ const CameraPage = ({ onNavigate }) => {
             </Text>
           </View>
 
-          {/* Photo Counter */}
+          {/* Photo Counter - now shows captures from recordings */}
           <View style={styles.photoCounter}>
-            <Text style={styles.photoCounterText}>📸 {photoCount}</Text>
+            <Text style={styles.photoCounterText}>🎙️ {photoCount} recordings</Text>
           </View>
         </CameraView>
       </View>
