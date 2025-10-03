@@ -23,10 +23,14 @@ from langchain_cerebras import ChatCerebras
 import json
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.vectorstores import Chroma
-
+import requests
+from typing import Optional
 
 # Configuration - choose your AI provider
 AI_PROVIDER = os.getenv("AI_PROVIDER", "cerebras").lower()  # "cerebras" or "groq"
+CARTESIA_API_KEY = os.getenv("CARTESIA_API_KEY")
+if not CARTESIA_API_KEY:
+    raise RuntimeError("Set CARTESIA_API_KEY env var")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -423,11 +427,35 @@ async def create_visual_memory(image_b64: str, memory_id: str,question:str) -> S
         )
 
     
+def transcribe_audio_file(audio_bytes: bytes, model: str = "ink-whisper", language: str = "en"):
+    """
+    Transcribe audio bytes using Cartesia API
+    """
+    url = "https://api.cartesia.ai/stt"
+    headers = {
+        "Authorization": f"Bearer {CARTESIA_API_KEY}",
+        "Cartesia-Version": "2025-04-16",
+    }
+    payload = {
+        "model": model,
+        "language": language,
+        # "timestamp_granularities[]": ["word"]  # uncomment if you want word-level timestamps
+    }
+    files = {
+        "file": ("audio.m4a", audio_bytes, "audio/m4a")
+    }
+    
+    try:
+        resp = requests.post(url, data=payload, files=files, headers=headers)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Audio transcription failed: {str(e)}")
 
 
 
 @app.post("/vision")
-async def vision_endpoint(user_id: str = Form(...), chat_id: str = Form(...), question: str = Form(default=""), mode: str = Form(default="classic"), file: UploadFile = File(...)):
+async def vision_endpoint(user_id: str = Form(...), chat_id: str = Form(...), question: str = Form(default=""), mode: str = Form(default="classic"), file: UploadFile = File(...), audio: UploadFile = File(None)):
     """
     Upload an image and get structured AI vision analysis using LangChain
     """
@@ -440,24 +468,51 @@ async def vision_endpoint(user_id: str = Form(...), chat_id: str = Form(...), qu
         contents = await file.read()
         image_b64 = base64.b64encode(contents).decode("utf-8")
         memory_id = str(uuid.uuid4())
+
+        final_question = question
+        transcription_data = None
+        
+        if audio is not None:
+            # Validate audio file
+            if not audio.content_type.startswith("audio/"):
+                raise HTTPException(status_code=400, detail="Audio file must be an audio format")
+            
+            print(f"📢 Processing audio file: {audio.filename}")
+            
+            # Read audio contents
+            audio_bytes = await audio.read()
+            
+            # Transcribe audio
+            transcription_data = transcribe_audio_file(audio_bytes)
+            transcribed_text = transcription_data.get("text", "")
+            
+            print(f"✅ Transcription: {transcribed_text}")
+            print(f"⏱️ Duration: {transcription_data.get('duration')} seconds")
+            
+            # Use transcribed text as the question (override text question if audio is provided)
+            if transcribed_text:
+                final_question = transcribed_text
+            else:
+                raise HTTPException(status_code=400, detail="Audio transcription returned empty text")
+
         new_memory=await create_visual_memory(image_b64,memory_id,question)
         store_visual_memory(new_memory)
         # Get chat history for this user/chat
         user_chat_history = chat_histories.get(user_id, {}).get(chat_id, [])
         if(mode.strip()=="blind"):
             print('blind executed')
-            response=generate_response_blind(question,current_context=new_memory,chat_history=user_chat_history)
+            response=generate_response_blind(final_question,current_context=new_memory,chat_history=user_chat_history)
             print('-----',response)
         else:
             print('normalexecuted')
-            response=generate_response_normal(question,current_context=new_memory,chat_history=user_chat_history)
+            response=generate_response_normal(final_question,current_context=new_memory,chat_history=user_chat_history)
         
         # Update chat history
         if user_id not in chat_histories:
             chat_histories[user_id] = {}
         if chat_id not in chat_histories[user_id]:
             chat_histories[user_id][chat_id] = []
-        chat_histories[user_id][chat_id].append({"role": "user", "content": question})
+        chat_histories[user_id][chat_id].append({"role": "user", "content": final_question})
         chat_histories[user_id][chat_id].append({"role": "assistant", "content": response})
         
         return {"answer": response, "chat_history": chat_histories[user_id][chat_id]}
