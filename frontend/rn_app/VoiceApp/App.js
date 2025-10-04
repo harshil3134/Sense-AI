@@ -1,21 +1,179 @@
-import React, { useState, useRef, createContext, useContext } from 'react';
+import React, { useState, useRef, createContext, useContext, useEffect } from 'react';
 import {
   View,
   TouchableOpacity,
   Text,
   StyleSheet,
   Alert,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { API_URL } from './config';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+
+
+
+const { width, height } = Dimensions.get('window');
 
 // Create a context for mode state
 const ModeContext = createContext();
 
+// Animated Sine Wave Component
+const AnimatedWaves = ({ isProcessing = false }) => {
+  const wave1 = useRef(new Animated.Value(0)).current;
+  const wave2 = useRef(new Animated.Value(0)).current;
+  const wave3 = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const duration = isProcessing ? 1500 : 3000;
+
+    const createWaveAnimation = (animValue, delay) => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(animValue, {
+            toValue: 1,
+            duration: duration,
+            useNativeDriver: false,
+          }),
+        ])
+      ).start();
+    };
+
+    createWaveAnimation(wave1, 0);
+    createWaveAnimation(wave2, 400);
+    createWaveAnimation(wave3, 800);
+  }, [isProcessing]);
+
+  return (
+    <View style={styles.wavesContainer}>
+      {/* Base gradient layers */}
+      <LinearGradient
+        colors={['#2D1B4E', '#1F1635', '#0F0A1E']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.baseGradient}
+      />
+      <LinearGradient
+        colors={['rgba(88, 60, 147, 0.5)', 'rgba(75, 40, 120, 0.5)', 'rgba(50, 30, 90, 0.5)']}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={styles.baseGradient}
+      />
+      <LinearGradient
+        colors={['rgba(68, 52, 131, 0.4)', 'rgba(55, 40, 102, 0.4)', 'rgba(40, 25, 78, 0.4)']}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={styles.baseGradient}
+      />
+      
+      {/* Animated wave overlays */}
+      <Animated.View 
+        style={[
+          styles.waveLayer,
+          {
+            transform: [{
+              translateX: wave1.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -width * 0.5],
+              })
+            }]
+          }
+        ]}
+      >
+        <LinearGradient
+          colors={['transparent', 'rgba(138, 107, 207, 0.3)', 'transparent']}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={styles.waveGradient}
+        />
+      </Animated.View>
+
+      <Animated.View 
+        style={[
+          styles.waveLayer,
+          {
+            transform: [{
+              translateX: wave2.interpolate({
+                inputRange: [0, 1],
+                outputRange: [width * 0.3, -width * 0.7],
+              })
+            }]
+          }
+        ]}
+      >
+        <LinearGradient
+          colors={['transparent', 'rgba(108, 80, 180, 0.35)', 'transparent']}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={styles.waveGradient}
+        />
+      </Animated.View>
+
+      <Animated.View 
+        style={[
+          styles.waveLayer,
+          {
+            transform: [{
+              translateX: wave3.interpolate({
+                inputRange: [0, 1],
+                outputRange: [width * 0.5, -width],
+              })
+            }]
+          }
+        ]}
+      >
+        <LinearGradient
+          colors={['transparent', 'rgba(88, 60, 147, 0.3)', 'transparent']}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={styles.waveGradient}
+        />
+      </Animated.View>
+    </View>
+  );
+};
+
+// Processing Line Component
+const ProcessingLine = () => {
+  const translateX = useRef(new Animated.Value(-width)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(translateX, {
+        toValue: width,
+        duration: 1500,
+        useNativeDriver: true,
+      })
+    ).start();
+  }, []);
+
+  return (
+    <View style={styles.processingLineContainer}>
+      <Animated.View 
+        style={[
+          styles.processingLine,
+          {
+            transform: [{ translateX }]
+          }
+        ]}
+      />
+    </View>
+  );
+};
+
+
 // Main App Component with Mode Provider
 const App = () => {
+
+  
+
+  
+  
   console.log('🚀 App initializing...');
   console.log('🌐 API URL:', API_URL);
   
@@ -40,44 +198,105 @@ const App = () => {
 // Home Page Component
 const HomePage = ({ onNavigate }) => {
   const { mode, toggleMode } = useContext(ModeContext);
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const glowAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scaleAnim, {
+          toValue: 1.02,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Glow animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(glowAnim, {
+          toValue: 0,
+          duration: 2000,
+          useNativeDriver: false,
+        }),
+      ])
+    ).start();
+  }, []);
+
+  const textShadowRadius = glowAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [15, 30],
+  });
 
   return (
-    <View style={[styles.homeContainer, mode === 'blind' && styles.blindModeBg]}>
+    <View style={styles.homeContainer}>
+      <AnimatedWaves />
+      
       {/* Mode Indicator */}
       <View style={styles.homeHeader}>
-        <View style={styles.modeIndicator}>
+        <BlurView intensity={80} tint="dark" style={styles.modeIndicator}>
           <Text style={styles.modeText}>
-            Mode: {mode === 'default' ? 'Default' : 'Alternate'}
+            Mode: {mode === 'normal' ? 'Normal' : 'Blind'}
           </Text>
-        </View>
+        </BlurView>
       </View>
 
+      
       {/* Center Content */}
       <View style={styles.centerContent}>
-        <Text style={styles.title}>Camera Audio Recorder</Text>
-        <Text style={styles.subtitle}>
-          Record audio with live camera preview
-        </Text>
-        
-        {/* Open Camera Button */}
-        <TouchableOpacity
-          style={[styles.openButton, mode === 'alternate' && styles.openButtonAlternate]}
-          onPress={onNavigate}
+        <Animated.Text 
+          style={[
+            styles.senseTitle,
+            {
+              textShadowRadius: textShadowRadius,
+            }
+          ]}
         >
-          <Text style={styles.openButtonText}>📷</Text>
-          <Text style={styles.openButtonLabel}>Open Camera</Text>
-        </TouchableOpacity>
+          Sense AI
+        </Animated.Text>
+        
+        {/* Start Chat Button */}
+        <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+          <TouchableOpacity
+            style={styles.startChatButton}
+            onPress={onNavigate}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={mode === 'normal' ? ['#8B5CF6', '#6366F1'] : ['#6366F1', '#8B5CF6']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.startChatGradient}
+            >
+              <Text style={styles.startChatText}>Start Chat</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </Animated.View>
       </View>
 
-      {/* Mode Toggle Button */}
+      {/* Mode Toggle Button - Fixed Position */}
       <View style={styles.homeFooter}>
         <TouchableOpacity
           style={styles.toggleButton}
           onPress={toggleMode}
+          activeOpacity={0.7}
         >
-          <Text style={styles.toggleButtonText}>
-            {mode === 'default' ? '⚡' : '🌙'}
-          </Text>
+          <BlurView intensity={60} tint="dark" style={styles.toggleButtonBlur}>
+            <Text style={styles.toggleButtonText}>
+              {mode === 'normal' ? '👁️' : '🌙'}
+            </Text>
+          </BlurView>
         </TouchableOpacity>
       </View>
     </View>
@@ -88,15 +307,15 @@ const HomePage = ({ onNavigate }) => {
 const CameraPage = ({ onNavigate }) => {
   const { mode, toggleMode } = useContext(ModeContext);
   const [isRecording, setIsRecording] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [recording, setRecording] = useState(null);
   const [audioPermission, setAudioPermission] = useState(null);
   const [photoCount, setPhotoCount] = useState(0);
-  const [capturedPhotoUri, setCapturedPhotoUri] = useState(null); // Store photo URI for recording
+  const [capturedPhotoUri, setCapturedPhotoUri] = useState(null);
   const cameraRef = useRef(null);
   
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
-  // Request permissions
   React.useEffect(() => {
     (async () => {
       console.log('🔐 Requesting permissions...');
@@ -110,11 +329,6 @@ const CameraPage = ({ onNavigate }) => {
     })();
   }, []);
 
-  // Removed auto-capture functionality - only capture when recording starts
-
-  // Remove the old capturePhoto function since we don't need auto-capture anymore
-
-  // Capture photo for recording (separate from auto-capture)
   const capturePhotoForRecording = async () => {
     console.log('📷 Capturing photo for recording...');
     
@@ -156,14 +370,12 @@ const CameraPage = ({ onNavigate }) => {
     try {
       console.log('🎙️ Starting recording...');
       
-      // Make sure no recording is in progress
       if (recording) {
         console.log('Recording already exists, stopping it first...');
         await recording.stopAndUnloadAsync();
         setRecording(null);
       }
       
-      // Capture photo when recording starts
       const photoUri = await capturePhotoForRecording();
       setCapturedPhotoUri(photoUri);
       
@@ -185,7 +397,6 @@ const CameraPage = ({ onNavigate }) => {
       console.log('✅ Recording started');
     } catch (error) {
       console.error('❌ Failed to start recording:', error);
-      console.error('Error details:', JSON.stringify(error, null, 2));
       Alert.alert('Error', `Failed to start audio recording: ${error.message}`);
     }
   };
@@ -201,10 +412,9 @@ const CameraPage = ({ onNavigate }) => {
       }
       
       setIsRecording(false);
+      setIsProcessing(true);
       
       const audioUri = recording.getURI();
-      console.log('📍 Audio URI before stop:', audioUri);
-      
       await recording.stopAndUnloadAsync();
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
@@ -213,52 +423,42 @@ const CameraPage = ({ onNavigate }) => {
       const fileName = `recording_${Date.now()}.m4a`;
       const permanentUri = `${FileSystem.documentDirectory}${fileName}`;
       
-      console.log('💾 Moving audio from:', audioUri);
-      console.log('💾 Moving audio to:', permanentUri);
-      
       await FileSystem.moveAsync({
         from: audioUri,
         to: permanentUri,
       });
       
       console.log('📁 Audio saved:', permanentUri);
-      console.log('📁 Photo URI:', capturedPhotoUri);
       
-      // Clear recording state before sending to API
       const photoToSend = capturedPhotoUri;
       setRecording(null);
       setCapturedPhotoUri(null);
       
-      // Send both image and audio to API
       await sendRecordingToAPI(photoToSend, permanentUri);
+      
+      setIsProcessing(false);
       
     } catch (error) {
       console.error('❌ Failed to stop recording:', error);
-      console.error('Error details:', JSON.stringify(error, null, 2));
       Alert.alert('Error', `Failed to stop recording: ${error.message}`);
-      // Clean up state even on error
       setRecording(null);
       setCapturedPhotoUri(null);
+      setIsProcessing(false);
     }
   };
 
   const playResponseAudio = async (base64Audio) => {
     try {
       console.log('🔊 Playing response audio...');
-      // Create a temporary file from base64 audio
       const audioFile = `${FileSystem.cacheDirectory}response_${Date.now()}.wav`;
       await FileSystem.writeAsStringAsync(audioFile, base64Audio, {
         encoding: FileSystem.EncodingType.Base64,
       });
 
-      console.log('📁 Temporary audio file created:', audioFile);
-
-      // Play the audio
       const sound = new Audio.Sound();
       await sound.loadAsync({ uri: audioFile });
       await sound.playAsync();
 
-      // Cleanup after playing
       sound.setOnPlaybackStatusUpdate(async (status) => {
         if (status.didJustFinish) {
           await sound.unloadAsync();
@@ -268,102 +468,63 @@ const CameraPage = ({ onNavigate }) => {
       });
     } catch (error) {
       console.error('❌ Failed to play response audio:', error);
-      Alert.alert('Error', 'Failed to play audio response');
     }
   };
 
   const sendRecordingToAPI = async (photoUri, audioUri) => {
     try {
       console.log('📡 Sending recording to API...');
-      console.log('   Photo URI:', photoUri);
-      console.log('   Audio URI:', audioUri);
-      console.log('   API URL:', API_URL);
 
-      if (!photoUri) {
-        Alert.alert('Error', 'No photo captured. Cannot send to API.');
+      if (!photoUri || !audioUri) {
+        Alert.alert('Error', 'Missing photo or audio file');
         return;
       }
 
-      if (!audioUri) {
-        Alert.alert('Error', 'No audio recorded. Cannot send to API.');
-        return;
-      }
-
-      // Verify files exist
       const photoInfo = await FileSystem.getInfoAsync(photoUri);
       const audioInfo = await FileSystem.getInfoAsync(audioUri);
       
-      console.log('📸 Photo exists:', photoInfo.exists, 'Size:', photoInfo.size);
-      console.log('🎙️ Audio exists:', audioInfo.exists, 'Size:', audioInfo.size);
+      console.log('📸 Photo exists:', photoInfo.exists);
+      console.log('🎙️ Audio exists:', audioInfo.exists);
 
       if (!photoInfo.exists || !audioInfo.exists) {
         Alert.alert('Error', 'Files not found on device');
         return;
       }
 
-      // Create form data with proper file objects
       const formData = new FormData();
-      
-      // Add photo with proper mime type
-      const photoBlob = {
+      formData.append('file', {
         uri: photoUri,
         type: 'image/jpeg',
         name: 'photo.jpg',
-      };
-      formData.append('file', photoBlob);
-      
-      // Add audio with proper mime type
-      const audioBlob = {
+      });
+      formData.append('audio', {
         uri: audioUri,
         type: 'audio/m4a',
         name: 'audio.m4a',
-      };
-      formData.append('audio', audioBlob);
-      
-      // Add other parameters as strings
+      });
       formData.append('user_id', 'user123');
       formData.append('chat_id', 'chat123');
       formData.append('mode', mode);
-      formData.append('question', ''); // Empty question means use audio transcription
+      formData.append('question', '');
 
-      console.log('📦 FormData prepared');
-      console.log('📤 Sending request to:', `${API_URL}/vision`);
-
-      // Send request with proper configuration
       const response = await fetch(`${API_URL}/vision`, {
         method: 'POST',
         body: formData,
         headers: {
           'Accept': 'application/json',
-          // Don't set Content-Type - let fetch handle it for FormData
         },
       });
 
-      console.log('📥 Response received');
-      console.log('   Status:', response.status);
-      console.log('   Status Text:', response.statusText);
-
-      // Read response text first for debugging
       const responseText = await response.text();
-      console.log('   Response body:', responseText);
+      console.log('📥 Response:', responseText);
 
       if (!response.ok) {
-        console.error('❌ API Error Response:', responseText);
-        throw new Error(`HTTP error! status: ${response.status}\nResponse: ${responseText}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // Try to parse JSON
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('❌ Failed to parse JSON:', parseError);
-        throw new Error(`Invalid JSON response: ${responseText.substring(0, 100)}`);
-      }
-
-      console.log('✅ API Response:', JSON.stringify(result, null, 2));
+      const result = JSON.parse(responseText);
+      console.log('✅ API Response:', result);
       
-      // Play audio response if available
       if (result.audio_base64) {
         await playResponseAudio(result.audio_base64);
       }
@@ -375,24 +536,8 @@ const CameraPage = ({ onNavigate }) => {
       );
 
     } catch (error) {
-      console.error('❌ Failed to send recording to API:');
-      console.error('   Error name:', error.name);
-      console.error('   Error message:', error.message);
-      console.error('   Stack:', error.stack);
-      
-      // Show more user-friendly error messages
-      let errorMessage = error.message;
-      if (error.message.includes('Network request failed')) {
-        errorMessage = 'Network error. Please check your internet connection and API URL.';
-      } else if (error.message.includes('timeout')) {
-        errorMessage = 'Request timeout. The server took too long to respond.';
-      }
-      
-      Alert.alert(
-        'API Error',
-        errorMessage,
-        [{ text: 'OK' }]
-      );
+      console.error('❌ API Error:', error.message);
+      Alert.alert('API Error', error.message, [{ text: 'OK' }]);
     }
   };
 
@@ -426,147 +571,195 @@ const CameraPage = ({ onNavigate }) => {
 
   return (
     <View style={styles.container}>
-      {/* Camera View - Upper 3/4 */}
       <View style={styles.cameraContainer}>
-        <CameraView
-          style={styles.camera}
-          facing="back"
-          ref={cameraRef}
-        >
-          {/* Back Button */}
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={onNavigate}
-          >
-            <Text style={styles.backButtonText}>← Back</Text>
+        <CameraView style={styles.camera} facing="back" ref={cameraRef}>
+          <TouchableOpacity style={styles.backButton} onPress={onNavigate}>
+            <BlurView intensity={80} tint="dark" style={styles.backButtonBlur}>
+              <Text style={styles.backButtonText}>← Back</Text>
+            </BlurView>
           </TouchableOpacity>
 
-          {/* Mode Indicator */}
-          <View style={styles.modeIndicatorCamera}>
+          <BlurView intensity={80} tint="dark" style={styles.modeIndicatorCamera}>
             <Text style={styles.modeText}>
               Mode: {mode === 'normal' ? 'Normal' : 'Blind'}
             </Text>
-          </View>
+          </BlurView>
 
-          {/* Photo Counter - now shows captures from recordings */}
-          <View style={styles.photoCounter}>
-            <Text style={styles.photoCounterText}>🎙️ {photoCount} recordings</Text>
-          </View>
+          <BlurView intensity={80} tint="dark" style={styles.photoCounter}>
+            <Text style={styles.photoCounterText}>🎙️ {photoCount}</Text>
+          </BlurView>
         </CameraView>
       </View>
 
-      {/* Bottom Control Panel - Lower 1/4 */}
+      {/* Processing Line Indicator */}
+      {isProcessing && <ProcessingLine />}
+
       <View style={styles.controlPanel}>
-        <View style={styles.buttonContainer}>
-          {/* Audio Recording Button */}
-          <TouchableOpacity
-            style={[
-              styles.recordButton,
-              isRecording && styles.recordButtonActive
-            ]}
-            onPress={isRecording ? stopRecording : startRecording}
-          >
-            <View style={[
-              styles.recordButtonInner,
-              isRecording && styles.recordButtonInnerActive
-            ]} />
-          </TouchableOpacity>
-
-          {/* Mode Toggle Button */}
-          <TouchableOpacity
-            style={styles.toggleButton}
-            onPress={toggleMode}
-          >
-            <Text style={styles.toggleButtonText}>
-              {mode === 'default' ? '⚡' : '🌙'}
-            </Text>
-          </TouchableOpacity>
+        <View style={styles.waveBackground}>
+          <AnimatedWaves isProcessing={isProcessing} />
         </View>
+        <BlurView 
+          intensity={isProcessing ? 0 : 80} 
+          tint="dark" 
+          style={styles.controlBlur}
+        >
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={[styles.recordButton, isRecording && styles.recordButtonActive]}
+              onPress={isRecording ? stopRecording : startRecording}
+              activeOpacity={0.8}
+            >
+              <View style={[
+                styles.recordButtonInner,
+                isRecording && styles.recordButtonInnerActive
+              ]} />
+            </TouchableOpacity>
 
-        {/* Recording Status */}
-        {isRecording && (
-          <View style={styles.recordingIndicator}>
-            <View style={styles.recordingDot} />
-            <Text style={styles.recordingText}>Recording...</Text>
+            <TouchableOpacity
+              style={styles.toggleButtonCamera}
+              onPress={toggleMode}
+              activeOpacity={0.7}
+            >
+              <BlurView intensity={60} tint="dark" style={styles.toggleButtonCameraBlur}>
+                <Text style={styles.toggleButtonText}>
+                  {mode === 'normal' ? '👁️' : '🌙'}
+                </Text>
+              </BlurView>
+            </TouchableOpacity>
           </View>
-        )}
+
+          {isRecording && (
+            <View style={styles.recordingIndicator}>
+              <View style={styles.recordingDot} />
+              <Text style={styles.recordingText}>Recording...</Text>
+            </View>
+          )}
+
+          {isProcessing && (
+            <View style={styles.processingIndicator}>
+              <Text style={styles.processingText}>Processing...</Text>
+            </View>
+          )}
+        </BlurView>
       </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  // Home Page Styles
   homeContainer: {
     flex: 1,
     backgroundColor: '#000',
   },
-  alternateBg: {
-    backgroundColor: '#1a1a2e',
-  },
   homeHeader: {
     paddingTop: 60,
     paddingHorizontal: 20,
+    zIndex: 10,
   },
   centerContent: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 40,
+    zIndex: 1,
   },
-  title: {
-    fontSize: 32,
+  senseTitle: {
+    fontSize: 70,
     fontWeight: 'bold',
-    color: '#fff',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#aaa',
+    color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: 60,
+    letterSpacing: 0,
+    fontFamily: 'Palatino',
+    textShadowColor: 'rgba(255, 255, 255, 0.8)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 15,
   },
-  openButton: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: '#ff4444',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#ff4444',
+  wavesContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: width,
+    height: height,
+    overflow: 'hidden',
+  },
+  baseGradient: {
+    position: 'absolute',
+    width: width,
+    height: height,
+    opacity: 1,
+  },
+  waveLayer: {
+    position: 'absolute',
+    width: width * 2,
+    height: height,
+    left: 0,
+    top: 0,
+    opacity: 1,
+  },
+  waveGradient: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  waveBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 0,
+  },
+  startChatButton: {
+    width: 240,
+    height: 60,
+    borderRadius: 30,
+    overflow: 'hidden',
+    shadowColor: '#8B5CF6',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.4,
     shadowRadius: 16,
-    elevation: 8,
+    elevation: 12,
   },
-  openButtonAlternate: {
-    backgroundColor: '#6c5ce7',
-    shadowColor: '#6c5ce7',
+  startChatGradient: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  openButtonText: {
-    fontSize: 48,
-    marginBottom: 8,
-  },
-  openButtonLabel: {
+  startChatText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
   homeFooter: {
-    paddingBottom: 40,
-    alignItems: 'flex-end',
-    paddingHorizontal: 30,
+    position: 'absolute',
+    bottom: 40,
+    right: 20,
+    zIndex: 10,
   },
-  
-  // Camera Page Styles
+  toggleButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    overflow: 'hidden',
+  },
+  toggleButtonBlur: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  toggleButtonText: {
+    fontSize: 24,
+  },
   container: {
     flex: 1,
     backgroundColor: '#000',
   },
   cameraContainer: {
     flex: 3,
-    position: 'relative',
   },
   camera: {
     flex: 1,
@@ -575,10 +768,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 50,
     left: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  backButtonBlur: {
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 20,
   },
   backButtonText: {
     color: '#fff',
@@ -589,50 +784,66 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 50,
     right: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
     borderRadius: 20,
+    overflow: 'hidden',
   },
   photoCounter: {
     position: 'absolute',
     top: 110,
     right: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
     borderRadius: 20,
+    overflow: 'hidden',
   },
   photoCounterText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
-  },
-  permissionText: {
-    color: '#fff',
-    fontSize: 16,
-    textAlign: 'center',
-    marginTop: 50,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   modeIndicator: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
+    overflow: 'hidden',
   },
   modeText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  processingLineContainer: {
+    position: 'absolute',
+    top: height * 0.75,
+    left: 0,
+    right: 0,
+    height: 4,
+    backgroundColor: 'rgba(255, 68, 68, 0.2)',
+    zIndex: 10,
+    overflow: 'hidden',
+  },
+  processingLine: {
+    width: 100,
+    height: 4,
+    backgroundColor: '#ff4444',
+    shadowColor: '#ff4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 10,
   },
   controlPanel: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  controlBlur: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 20,
+    zIndex: 1,
   },
   buttonContainer: {
     flexDirection: 'row',
@@ -650,6 +861,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 4,
     borderColor: '#ff4444',
+    shadowColor: '#ff4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 8,
   },
   recordButtonActive: {
     backgroundColor: '#ff4444',
@@ -666,20 +882,18 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#fff',
   },
-  toggleButton: {
+  toggleButtonCamera: {
     position: 'absolute',
     right: 40,
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#333',
+    overflow: 'hidden',
+  },
+  toggleButtonCameraBlur: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#555',
-  },
-  toggleButtonText: {
-    fontSize: 24,
   },
   recordingIndicator: {
     flexDirection: 'row',
@@ -698,12 +912,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  processingIndicator: {
+    marginTop: 16,
+  },
+  processingText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  permissionText: {
+    color: '#fff',
+    fontSize: 16,
+    textAlign: 'center',
+    marginTop: 50,
+    paddingHorizontal: 20,
+  },
   permButton: {
     marginTop: 20,
     backgroundColor: '#ff4444',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
+    alignSelf: 'center',
   },
   permButtonText: {
     color: '#fff',
