@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 import uvicorn
 import os
+import asyncio
+import threading
 from datetime import datetime
 import cv2
 import numpy as np
@@ -26,6 +28,71 @@ from langchain.vectorstores import Chroma
 import requests
 from typing import Optional
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
+
+executor = ThreadPoolExecutor(max_workers=10)
+
+##logging
+import logging
+from functools import wraps
+import time
+from pathlib import Path
+
+# Setup logging configuration
+log_dir = Path("logs")
+log_dir.mkdir(exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.FileHandler(log_dir / 'api_performance.log'),
+        logging.StreamHandler()  # Also print to console
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
+# Timing decorator
+def log_execution_time(func_name: str = None):
+    """Decorator to log function execution time"""
+    def decorator(func):
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            name = func_name or func.__name__
+            start_time = time.time()
+            logger.info(f"▶ START: {name}")
+            try:
+                result = await func(*args, **kwargs)
+                elapsed = time.time() - start_time
+                logger.info(f"✓ END: {name} | Duration: {elapsed:.3f}s")
+                return result
+            except Exception as e:
+                elapsed = time.time() - start_time
+                logger.error(f"✗ ERROR: {name} | Duration: {elapsed:.3f}s | Error: {str(e)}")
+                raise
+        
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            name = func_name or func.__name__
+            start_time = time.time()
+            logger.info(f"▶ START: {name}")
+            try:
+                result = func(*args, **kwargs)
+                elapsed = time.time() - start_time
+                logger.info(f"✓ END: {name} | Duration: {elapsed:.3f}s")
+                return result
+            except Exception as e:
+                elapsed = time.time() - start_time
+                logger.error(f"✗ ERROR: {name} | Duration: {elapsed:.3f}s | Error: {str(e)}")
+                raise
+        
+        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
+    return decorator
+##loggin end
+
+
 
 def cartesia_tts_bytes(text: str, output_file: str):
     url = "https://api.cartesia.ai/tts/bytes"
@@ -205,7 +272,7 @@ def store_visual_memory(structured_response: StructuredVisionResponse):
     except Exception as e:
         print(f"Error storing visual memory: {e}")
 
-
+@log_execution_time("retrieve_context")
 def retrieve_context(query: str, k: int = 3) -> str:
     """
     Retrieve top-k relevant documents for a query and return concatenated context.
@@ -219,6 +286,7 @@ def retrieve_context(query: str, k: int = 3) -> str:
         print(f"Error retrieving context: {e}")
         return ""
 
+@log_execution_time("generate_response_blind")
 def generate_response_blind(question: str,current_context:str, chat_history=None) -> str:
     """
     Generate answer using Cerebras with RAG context via LangChain.
@@ -292,7 +360,8 @@ def generate_response_blind(question: str,current_context:str, chat_history=None
     except Exception as e:
         return f"Error generating answer with Cerebras: {e}"
 
-def generate_response_normal(question: str,current_context:str, chat_history=None) -> str:
+@log_execution_time("generate_response_normal")
+def generate_response_normal(question: str,current_context:str, chat_history=None,retrieved_context=None) -> str:
     """
     Generate answer using Cerebras with RAG context via LangChain.
     """
@@ -306,7 +375,7 @@ def generate_response_normal(question: str,current_context:str, chat_history=Non
             for msg in recent_messages:
                 chat_context += f"{msg['role']}: {msg['content']}\n"
 
-        retrieved_context=retrieve_context(question,5)
+        
         print("-------",retrieved_context)
         prompt = f"""
             User Question: "{question}"
@@ -367,6 +436,7 @@ async def health():
         message="AI Accessibility Assistant is running"
     )
 #need to pass question to this function for better answer
+@log_execution_time("create_visual_memory")
 async def create_visual_memory(image_b64: str, memory_id: str,question:str) -> StructuredVisionResponse:
     """Create structured visual memory from image"""
 
@@ -458,6 +528,7 @@ async def create_visual_memory(image_b64: str, memory_id: str,question:str) -> S
         )
 
     
+@log_execution_time("generate_audio_response")
 def generate_audio_response(text: str) -> str:
     """Generate audio from text and return as base64 string"""
     try:
@@ -480,6 +551,7 @@ def generate_audio_response(text: str) -> str:
         print(f"Error generating audio: {str(e)}")
         return None
 
+@log_execution_time("transcribe_audio_file")
 def transcribe_audio_file(audio_bytes: bytes, model: str = "ink-whisper", language: str = "en"):
     """
     Transcribe audio bytes using Cartesia API
@@ -508,57 +580,89 @@ def transcribe_audio_file(audio_bytes: bytes, model: str = "ink-whisper", langua
 
 
 @app.post("/vision")
-async def vision_endpoint(user_id: str = Form(...), chat_id: str = Form(...), question: str = Form(default=""), mode: str = Form(default="classic"), file: UploadFile = File(...), audio: UploadFile = File(None)):
+async def vision_endpoint(user_id: str = Form(...), chat_id: str = Form(...), 
+                         question: str = Form(default=""), mode: str = Form(default="classic"), 
+                         file: UploadFile = File(...), audio: UploadFile = File(None)):
     """
     Upload an image and get structured AI vision analysis using LangChain
     """
+    request_start = time.time()
+    request_id = str(uuid.uuid4())[:8]
+    
+    logger.info(f"{'='*80}")
+    logger.info(f"NEW REQUEST [{request_id}] | user_id={user_id} | chat_id={chat_id} | mode={mode}")
+    logger.info(f"{'='*80}")
+    
     global chat_histories
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
     
     try:
         # Read image contents
+        read_start = time.time()
         contents = await file.read()
         image_b64 = base64.b64encode(contents).decode("utf-8")
         memory_id = str(uuid.uuid4())
+        logger.info(f"Image read and encoded | Duration: {time.time() - read_start:.3f}s")
 
         final_question = question
         transcription_data = None
         
+        # Audio transcription
         if audio is not None:
-            # Validate audio file
             if not audio.content_type.startswith("audio/"):
                 raise HTTPException(status_code=400, detail="Audio file must be an audio format")
             
-            print(f"📢 Processing audio file: {audio.filename}")
-            
-            # Read audio contents
+            logger.info(f"Processing audio file: {audio.filename}")
             audio_bytes = await audio.read()
             
-            # Transcribe audio
             transcription_data = transcribe_audio_file(audio_bytes)
             transcribed_text = transcription_data.get("text", "")
             
-            print(f"✅ Transcription: {transcribed_text}")
-            print(f"⏱️ Duration: {transcription_data.get('duration')} seconds")
+            logger.info(f"Transcription: {transcribed_text}")
             
-            # Use transcribed text as the question (override text question if audio is provided)
             if transcribed_text:
                 final_question = transcribed_text
             else:
                 raise HTTPException(status_code=400, detail="Audio transcription returned empty text")
 
-        new_memory=await create_visual_memory(image_b64,memory_id,question)
-        store_visual_memory(new_memory)
-        # Get chat history for this user/chat
+        # Parallel execution
+        parallel_start = time.time()
+        logger.info("Starting parallel tasks: create_visual_memory + retrieve_context")
+        
+        async def get_retrieved_context():
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(executor, retrieve_context, final_question, 5)
+        
+        new_memory, retrieved_context = await asyncio.gather(
+            create_visual_memory(image_b64, memory_id, final_question),
+            get_retrieved_context()
+        )
+        
+        parallel_elapsed = time.time() - parallel_start
+        logger.info(f"Parallel tasks completed | Total: {parallel_elapsed:.3f}s")
+
+        # Store visual memory in background (non-blocking)
+        threading.Thread(
+            target=store_visual_memory,
+            args=(new_memory,),
+            daemon=True
+        ).start()
+        logger.info("Background task started: store_visual_memory")
+        
+        # Get chat history
         user_chat_history = chat_histories.get(user_id, {}).get(chat_id, [])
-        if(mode.strip()=="blind"):
-            print('blind executed')
-            response=generate_response_blind(final_question,current_context=new_memory,chat_history=user_chat_history)
-            print('-----',response)
+        
+        # Generate response based on mode
+        if mode.strip() == "blind":
+            logger.info("Mode: blind - generating response")
+            response = generate_response_blind(final_question, current_context=new_memory, 
+                                             chat_history=user_chat_history)
         else:
-            print('normalexecuted')
-            response=generate_response_normal(final_question,current_context=new_memory,chat_history=user_chat_history)
+            logger.info("Mode: normal - generating response")
+            response = generate_response_normal(final_question, current_context=new_memory, 
+                                              chat_history=user_chat_history, 
+                                              retrieved_context=retrieved_context)
         
         # Update chat history
         if user_id not in chat_histories:
@@ -571,14 +675,29 @@ async def vision_endpoint(user_id: str = Form(...), chat_id: str = Form(...), qu
         # Generate audio response
         audio_base64 = generate_audio_response(response)
         
+        # Calculate total time
+        total_elapsed = time.time() - request_start
+        logger.info(f"{'='*80}")
+        logger.info(f"REQUEST COMPLETE [{request_id}] | Total Duration: {total_elapsed:.3f}s")
+        logger.info(f"{'='*80}\n")
+        
         return {
             "answer": response, 
             "audio_base64": audio_base64,
-            "chat_history": chat_histories[user_id][chat_id]
+            "chat_history": chat_histories[user_id][chat_id],
+            "processing_time": f"{total_elapsed:.3f}s"
         }
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions without modification
+        raise
     except Exception as e:
+        total_elapsed = time.time() - request_start
+        logger.error(f"{'='*80}")
+        logger.error(f"REQUEST FAILED [{request_id}] | Duration: {total_elapsed:.3f}s | Error: {str(e)}")
+        logger.error(f"{'='*80}\n")
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
-
+    
 # "development apis"
 @app.get("/memories")
 async def list_memories():
