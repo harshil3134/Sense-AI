@@ -29,9 +29,9 @@ const AnimatedWaves = ({ isProcessing = false }) => {
   const wave3 = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // total cycle of 4 seconds left -> right
-    const totalDuration = 4000;
-    const stagger = 800; // 800ms between wave starts
+  // total cycle of 8 seconds left -> right (slower)
+  const totalDuration = 8000;
+  const stagger = 1600; // 1600ms between wave starts
 
     const createWaveAnimation = (animValue, delay) => {
       const seq = Animated.sequence([
@@ -78,19 +78,19 @@ const AnimatedWaves = ({ isProcessing = false }) => {
     <View style={styles.wavesContainer}>
       {/* Base gradient layers */}
       <LinearGradient
-        colors={['#2D1B4E', '#1F1635', '#0F0A1E']}
+        colors={['#071928', '#0f2a3b', '#162f3f']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.baseGradient}
       />
       <LinearGradient
-        colors={['rgba(88, 60, 147, 0.5)', 'rgba(75, 40, 120, 0.5)', 'rgba(50, 30, 90, 0.5)']}
+        colors={['rgba(20,40,65,0.55)', 'rgba(40,24,38,0.48)', 'rgba(18,20,28,0.5)']}
         start={{ x: 1, y: 0 }}
         end={{ x: 0, y: 1 }}
         style={styles.baseGradient}
       />
       <LinearGradient
-        colors={['rgba(68, 52, 131, 0.4)', 'rgba(55, 40, 102, 0.4)', 'rgba(40, 25, 78, 0.4)']}
+        colors={['rgba(255,140,84,0.06)', 'rgba(68,180,160,0.06)', 'rgba(120,90,200,0.06)']}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
         style={styles.baseGradient}
@@ -111,7 +111,7 @@ const AnimatedWaves = ({ isProcessing = false }) => {
         ]}
       >
         <LinearGradient
-          colors={['transparent', 'rgba(138, 107, 207, 0.3)', 'transparent']}
+          colors={['transparent', 'rgba(255,140,84,0.28)', 'transparent']}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={styles.waveGradient}
@@ -132,7 +132,7 @@ const AnimatedWaves = ({ isProcessing = false }) => {
         ]}
       >
         <LinearGradient
-          colors={['transparent', 'rgba(108, 80, 180, 0.35)', 'transparent']}
+          colors={['transparent', 'rgba(64,180,160,0.30)', 'transparent']}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={styles.waveGradient}
@@ -153,7 +153,7 @@ const AnimatedWaves = ({ isProcessing = false }) => {
         ]}
       >
         <LinearGradient
-          colors={['transparent', 'rgba(88, 60, 147, 0.3)', 'transparent']}
+          colors={['transparent', 'rgba(120,90,200,0.26)', 'transparent']}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={styles.waveGradient}
@@ -276,16 +276,48 @@ const HomePage = ({ onNavigate }) => {
       
       {/* Center Content */}
       <View style={styles.centerContent}>
-        <Animated.Text 
-          style={[
-            styles.senseTitle,
-            {
-              textShadowRadius: textShadowRadius,
-            }
-          ]}
-        >
-          Sense AI
-        </Animated.Text>
+        <View style={styles.senseTitleWrapper}>
+          {/* Simpler outer glow: single soft halo + subtle colored accent */}
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.outerGlowBase,
+              {
+                opacity: glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.06, 0.22] }),
+                transform: [{ scale: glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1.18] }) }],
+              },
+            ]}
+          />
+
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.outerGlowAccent,
+              {
+                opacity: glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.03, 0.12] }),
+                transform: [{ scale: glowAnim.interpolate({ inputRange: [0, 1], outputRange: [1.0, 1.12] }) }],
+              },
+            ]}
+          />
+
+          <Animated.Text
+            numberOfLines={1}
+            allowFontScaling={false}
+            adjustsFontSizeToFit={true}
+            style={[
+              styles.senseTitle,
+              {
+                textShadowRadius: textShadowRadius,
+                flexShrink: 0,
+                includeFontPadding: false,
+                width: width - 80, // keep it on one line by giving room
+                textAlign: 'center',
+              },
+            ]}
+          >
+            Sense AI
+          </Animated.Text>
+        </View>
         
         {/* Start Chat Button */}
         <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
@@ -694,7 +726,52 @@ const styles = StyleSheet.create({
     fontFamily: 'Palatino',
     textShadowColor: 'rgba(255, 255, 255, 0.8)',
     textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 15,
+    textShadowRadius: 18,
+    shadowColor: '#ffffff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 36,
+    elevation: 12,
+  },
+  senseTitleWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    paddingVertical: 18,
+    marginBottom: 60,
+    overflow: 'visible',
+    zIndex: 20,
+  },
+  outerGlowBase: {
+    position: 'absolute',
+    width: 320,
+    height: 140,
+    borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -160 }, { translateY: -70 }],
+    shadowColor: '#ffffff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 30,
+    elevation: 18,
+  },
+  outerGlowAccent: {
+    position: 'absolute',
+    width: 360,
+    height: 180,
+    borderRadius: 100,
+    backgroundColor: 'rgba(68,180,160,0.06)',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -180 }, { translateY: -80 }],
+    shadowColor: 'rgba(68,180,160,0.9)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 36,
+    elevation: 10,
   },
   wavesContainer: {
     position: 'absolute',
