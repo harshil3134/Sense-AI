@@ -29,43 +29,68 @@ const AnimatedWaves = ({ isProcessing = false }) => {
   const wave3 = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const duration = isProcessing ? 1500 : 3000;
+  // total cycle of 8 seconds left -> right (slower)
+  const totalDuration = 8000;
+  const stagger = 1600; // 1600ms between wave starts
 
     const createWaveAnimation = (animValue, delay) => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.timing(animValue, {
-            toValue: 1,
-            duration: duration,
-            useNativeDriver: false,
-          }),
-        ])
-      ).start();
+      const seq = Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(animValue, {
+          toValue: 1,
+          duration: totalDuration,
+          useNativeDriver: true,
+        }),
+        // reset instantly so each loop restarts from left
+        Animated.timing(animValue, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ]);
+      const loop = Animated.loop(seq);
+      loop.start();
+      return loop;
     };
 
-    createWaveAnimation(wave1, 0);
-    createWaveAnimation(wave2, 400);
-    createWaveAnimation(wave3, 800);
+    const l1 = createWaveAnimation(wave1, 0);
+    const l2 = createWaveAnimation(wave2, stagger);
+    const l3 = createWaveAnimation(wave3, stagger * 2);
+
+    return () => {
+      try {
+        l1.stop();
+      } catch (e) {}
+      try {
+        l2.stop();
+      } catch (e) {}
+      try {
+        l3.stop();
+      } catch (e) {}
+      // also stop animated values
+      wave1.stopAnimation && wave1.stopAnimation();
+      wave2.stopAnimation && wave2.stopAnimation();
+      wave3.stopAnimation && wave3.stopAnimation();
+    };
   }, [isProcessing]);
 
   return (
     <View style={styles.wavesContainer}>
       {/* Base gradient layers */}
       <LinearGradient
-        colors={['#2D1B4E', '#1F1635', '#0F0A1E']}
+        colors={['#071928', '#0f2a3b', '#162f3f']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.baseGradient}
       />
       <LinearGradient
-        colors={['rgba(88, 60, 147, 0.5)', 'rgba(75, 40, 120, 0.5)', 'rgba(50, 30, 90, 0.5)']}
+        colors={['rgba(20,40,65,0.55)', 'rgba(40,24,38,0.48)', 'rgba(18,20,28,0.5)']}
         start={{ x: 1, y: 0 }}
         end={{ x: 0, y: 1 }}
         style={styles.baseGradient}
       />
       <LinearGradient
-        colors={['rgba(68, 52, 131, 0.4)', 'rgba(55, 40, 102, 0.4)', 'rgba(40, 25, 78, 0.4)']}
+        colors={['rgba(255,140,84,0.06)', 'rgba(68,180,160,0.06)', 'rgba(120,90,200,0.06)']}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
         style={styles.baseGradient}
@@ -86,7 +111,7 @@ const AnimatedWaves = ({ isProcessing = false }) => {
         ]}
       >
         <LinearGradient
-          colors={['transparent', 'rgba(138, 107, 207, 0.3)', 'transparent']}
+          colors={['transparent', 'rgba(255,140,84,0.28)', 'transparent']}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={styles.waveGradient}
@@ -107,7 +132,7 @@ const AnimatedWaves = ({ isProcessing = false }) => {
         ]}
       >
         <LinearGradient
-          colors={['transparent', 'rgba(108, 80, 180, 0.35)', 'transparent']}
+          colors={['transparent', 'rgba(64,180,160,0.30)', 'transparent']}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={styles.waveGradient}
@@ -128,7 +153,7 @@ const AnimatedWaves = ({ isProcessing = false }) => {
         ]}
       >
         <LinearGradient
-          colors={['transparent', 'rgba(88, 60, 147, 0.3)', 'transparent']}
+          colors={['transparent', 'rgba(120,90,200,0.26)', 'transparent']}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={styles.waveGradient}
@@ -169,10 +194,6 @@ const ProcessingLine = () => {
 
 // Main App Component with Mode Provider
 const App = () => {
-
-  
-
-  
   
   console.log('🚀 App initializing...');
   console.log('🌐 API URL:', API_URL);
@@ -255,16 +276,27 @@ const HomePage = ({ onNavigate }) => {
       
       {/* Center Content */}
       <View style={styles.centerContent}>
-        <Animated.Text 
-          style={[
-            styles.senseTitle,
-            {
-              textShadowRadius: textShadowRadius,
-            }
-          ]}
-        >
-          Sense AI
-        </Animated.Text>
+        <View style={styles.senseTitleWrapper}>
+          {/* outer glow removed to avoid light rounded rectangle behind title */}
+
+          <Animated.Text
+            numberOfLines={1}
+            allowFontScaling={false}
+            adjustsFontSizeToFit={true}
+            style={[
+              styles.senseTitle,
+              {
+                textShadowRadius: textShadowRadius,
+                flexShrink: 0,
+                includeFontPadding: false,
+                width: width - 80, // keep it on one line by giving room
+                textAlign: 'center',
+              },
+            ]}
+          >
+            Sense AI
+          </Animated.Text>
+        </View>
         
         {/* Start Chat Button */}
         <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
@@ -274,7 +306,7 @@ const HomePage = ({ onNavigate }) => {
             activeOpacity={0.8}
           >
             <LinearGradient
-              colors={mode === 'normal' ? ['#8B5CF6', '#6366F1'] : ['#6366F1', '#8B5CF6']}
+              colors={mode === 'normal' ? ['#00C6FF', '#0072FF', '#8B5CF6'] : ['#8B5CF6', '#0072FF', '#00C6FF']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.startChatGradient}
@@ -294,7 +326,7 @@ const HomePage = ({ onNavigate }) => {
         >
           <BlurView intensity={60} tint="dark" style={styles.toggleButtonBlur}>
             <Text style={styles.toggleButtonText}>
-              {mode === 'normal' ? '👁️' : '🌙'}
+              {mode === 'normal' ? '👁️' : '🦯'}
             </Text>
           </BlurView>
         </TouchableOpacity>
@@ -673,8 +705,24 @@ const styles = StyleSheet.create({
     fontFamily: 'Palatino',
     textShadowColor: 'rgba(255, 255, 255, 0.8)',
     textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 15,
+    textShadowRadius: 18,
+    shadowColor: '#ffffff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 36,
+    elevation: 12,
   },
+  senseTitleWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    paddingVertical: 18,
+    marginBottom: 60,
+    overflow: 'visible',
+    zIndex: 20,
+  },
+  // outer glows removed
   wavesContainer: {
     position: 'absolute',
     top: 0,
@@ -717,11 +765,14 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 30,
     overflow: 'hidden',
-    shadowColor: '#8B5CF6',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowColor: '#0a6cff',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'transparent',
   },
   startChatGradient: {
     flex: 1,
@@ -731,8 +782,11 @@ const styles = StyleSheet.create({
   startChatText: {
     color: '#fff',
     fontSize: 20,
-    fontWeight: '700',
-    letterSpacing: 1,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
   },
   homeFooter: {
     position: 'absolute',
