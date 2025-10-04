@@ -29,24 +29,49 @@ const AnimatedWaves = ({ isProcessing = false }) => {
   const wave3 = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const duration = isProcessing ? 1500 : 3000;
+    // total cycle of 4 seconds left -> right
+    const totalDuration = 4000;
+    const stagger = 800; // 800ms between wave starts
 
     const createWaveAnimation = (animValue, delay) => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.timing(animValue, {
-            toValue: 1,
-            duration: duration,
-            useNativeDriver: false,
-          }),
-        ])
-      ).start();
+      const seq = Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(animValue, {
+          toValue: 1,
+          duration: totalDuration,
+          useNativeDriver: true,
+        }),
+        // reset instantly so each loop restarts from left
+        Animated.timing(animValue, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ]);
+      const loop = Animated.loop(seq);
+      loop.start();
+      return loop;
     };
 
-    createWaveAnimation(wave1, 0);
-    createWaveAnimation(wave2, 400);
-    createWaveAnimation(wave3, 800);
+    const l1 = createWaveAnimation(wave1, 0);
+    const l2 = createWaveAnimation(wave2, stagger);
+    const l3 = createWaveAnimation(wave3, stagger * 2);
+
+    return () => {
+      try {
+        l1.stop();
+      } catch (e) {}
+      try {
+        l2.stop();
+      } catch (e) {}
+      try {
+        l3.stop();
+      } catch (e) {}
+      // also stop animated values
+      wave1.stopAnimation && wave1.stopAnimation();
+      wave2.stopAnimation && wave2.stopAnimation();
+      wave3.stopAnimation && wave3.stopAnimation();
+    };
   }, [isProcessing]);
 
   return (
@@ -169,10 +194,6 @@ const ProcessingLine = () => {
 
 // Main App Component with Mode Provider
 const App = () => {
-
-  
-
-  
   
   console.log('🚀 App initializing...');
   console.log('🌐 API URL:', API_URL);
