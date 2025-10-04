@@ -277,28 +277,7 @@ const HomePage = ({ onNavigate }) => {
       {/* Center Content */}
       <View style={styles.centerContent}>
         <View style={styles.senseTitleWrapper}>
-          {/* Simpler outer glow: single soft halo + subtle colored accent */}
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.outerGlowBase,
-              {
-                opacity: glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.06, 0.22] }),
-                transform: [{ scale: glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1.18] }) }],
-              },
-            ]}
-          />
-
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.outerGlowAccent,
-              {
-                opacity: glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.03, 0.12] }),
-                transform: [{ scale: glowAnim.interpolate({ inputRange: [0, 1], outputRange: [1.0, 1.12] }) }],
-              },
-            ]}
-          />
+          {/* outer glow removed to avoid light rounded rectangle behind title */}
 
           <Animated.Text
             numberOfLines={1}
@@ -327,7 +306,7 @@ const HomePage = ({ onNavigate }) => {
             activeOpacity={0.8}
           >
             <LinearGradient
-              colors={mode === 'normal' ? ['#8B5CF6', '#6366F1'] : ['#6366F1', '#8B5CF6']}
+              colors={mode === 'normal' ? ['#00C6FF', '#0072FF', '#8B5CF6'] : ['#8B5CF6', '#0072FF', '#00C6FF']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.startChatGradient}
@@ -347,7 +326,7 @@ const HomePage = ({ onNavigate }) => {
         >
           <BlurView intensity={60} tint="dark" style={styles.toggleButtonBlur}>
             <Text style={styles.toggleButtonText}>
-              {mode === 'normal' ? '👁️' : '🌙'}
+              {mode === 'normal' ? '👁️' : '🦯'}
             </Text>
           </BlurView>
         </TouchableOpacity>
@@ -743,36 +722,7 @@ const styles = StyleSheet.create({
     overflow: 'visible',
     zIndex: 20,
   },
-  outerGlowBase: {
-    position: 'absolute',
-    width: 320,
-    height: 140,
-    borderRadius: 90,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    top: '50%',
-    left: '50%',
-    transform: [{ translateX: -160 }, { translateY: -70 }],
-    shadowColor: '#ffffff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 30,
-    elevation: 18,
-  },
-  outerGlowAccent: {
-    position: 'absolute',
-    width: 360,
-    height: 180,
-    borderRadius: 100,
-    backgroundColor: 'rgba(68,180,160,0.06)',
-    top: '50%',
-    left: '50%',
-    transform: [{ translateX: -180 }, { translateY: -80 }],
-    shadowColor: 'rgba(68,180,160,0.9)',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.7,
-    shadowRadius: 36,
-    elevation: 10,
-  },
+  // outer glows removed
   wavesContainer: {
     position: 'absolute',
     top: 0,
@@ -815,11 +765,14 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 30,
     overflow: 'hidden',
-    shadowColor: '#8B5CF6',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowColor: '#0a6cff',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'transparent',
   },
   startChatGradient: {
     flex: 1,
@@ -829,8 +782,11 @@ const styles = StyleSheet.create({
   startChatText: {
     color: '#fff',
     fontSize: 20,
-    fontWeight: '700',
-    letterSpacing: 1,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
   },
   homeFooter: {
     position: 'absolute',
