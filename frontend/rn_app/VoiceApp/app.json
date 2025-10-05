@@ -5,23 +5,25 @@
     "version": "1.0.0",
     "plugins": [
       "expo-audio",
-      ["expo-camera",
+      [
+        "expo-camera",
         {
           "cameraPermission": "Allow app to access your camera for live preview"
         }
-    ]
-  ],
-  "android": {
-    "permissions": [
-      "CAMERA",
-      "RECORD_AUDIO"
-    ]
-  },
-  "ios": {
-    "infoPlist": {
-      "NSCameraUsageDescription": "Allow app to access your camera",
-      "NSMicrophoneUsageDescription": "Allow app to record audio"
+      ],
+      "expo-font"
+    ],
+    "android": {
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO"
+      ]
+    },
+    "ios": {
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow app to access your camera",
+        "NSMicrophoneUsageDescription": "Allow app to record audio"
+      }
     }
-  }
   }
 }
