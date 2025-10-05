@@ -1,13 +1,43 @@
+###############################
+# Sense AI Backend Dependencies
+# Cleaned & deduplicated (5 Oct 2025)
+# Grouped for clarity. Pin/upper bounds chosen for stability while allowing minor updates.
+###############################
+
+# --- Core API ---
 fastapi==0.104.1
-uvicorn[standard]==0.24.0
-python-multipart==0.0.6
+uvicorn[standard]==0.24.0          # ASGI server with websockets & reload extras
+python-multipart==0.0.6            # Form-data / file uploads
+pydantic>=2.0.0,<3.0.0             # Data models
+
+# --- Image / Vision Processing ---
 pillow==10.3.0
-pydantic>=2.0.0,<3.0.0
 numpy==1.26.4
-opencv-python-headless==4.9.0.80
-cerebras-cloud-sdk>=1.0.0
-groq>=0.4.1
-python-dotenv>=1.0.0
-python-dotenv
-python-dotenv==1.0.0
-langchain_groq
+opencv-python-headless==4.9.0.80   # Headless OpenCV for container use
+
+# --- AI Provider SDKs & Orchestration ---
+cerebras-cloud-sdk>=1.0.0          # Cerebras API client
+groq>=0.4.1                        # Groq API client
+langchain>=0.2.0,<0.3.0            # LangChain main package
+langchain-core>=0.2.0,<0.3.0       # Core primitives
+langchain-community>=0.2.0,<0.3.0  # Community integrations (embeddings/vectorstores re-exports)
+langchain-groq>=0.1.0              # Provides langchain_groq (ChatGroq)
+langchain-cerebras>=0.1.0          # Provides langchain_cerebras (ChatCerebras)
+
+# --- Vector Store & Embeddings ---
+chromadb>=0.5.0                    # Persistent vector DB
+sentence-transformers>=2.7.0       # For HuggingFaceEmbeddings (brings in torch)
+
+# --- Networking / Utilities ---
+requests>=2.31.0,<3.0.0            # External HTTP calls (Cartesia APIs, etc.)
+python-dotenv==1.0.0               # Single pinned version (was duplicated)
+
+# --- Optional / Future (uncomment as needed) ---
+# torch==2.2.2                     # Explicit pin if you need to control torch version
+# accelerate                        # If you later optimize model inference
+
+# Notes:
+# 1. sentence-transformers pulls in torch automatically; pin torch above only if reproducibility issues arise.
+# 2. If image processing grows (e.g., video), consider adding opencv-contrib-python-headless.
+# 3. Keep langchain & langchain-core versions aligned to avoid interface mismatches.
+

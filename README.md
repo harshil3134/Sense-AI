@@ -16,10 +16,13 @@ Sense AI solves this by combining real‑time multimodal scene analysis, convers
 
 ### Normal Mode
 Designed for broad situational exploration and conversational visual understanding. Ideal for:
-- Identifying objects, layout, relative positions
-- Multi‑turn exploration ("What’s left of the table?", "Is anyone sitting there?")
+- Identifying objects, layout, and relative spatial relationships
+- Locating previously referenced or recently seen personal items (e.g. misplaced small electronics)
+- Getting guided assistance for everyday interactions (pairing devices, setting items down safely, orienting to entrances)
+- Comparing or selecting among multiple items (books, packages, products) with follow‑up detail requests
+- Progressive deep‑dive: ask for a summary first, then “tell me more” for richer layered detail
 - Informational use in stores, public spaces, exhibits
-- Curiosity & descriptive enrichment
+- General curiosity & descriptive enrichment
 
 ### Visually Impaired Mode
 Optimized for actionable, concise auditory guidance:
@@ -46,40 +49,54 @@ Below is a feature matrix that builds on the two adaptive operating modes above:
 ## 🏗️ System Architecture Overview
 
 ```text
-┌──────────────┐        Image + Audio        ┌───────────────────────┐
-│ React Native │ ───────────────────────────▶│ FastAPI Backend        │
-│ (Camera +    │                            │  /vision endpoint      │
-│  Mic + UI)   │◀──────── Audio (base64) ────┤  /memories /health     │
-└─────┬────────┘                            └──────────┬────────────┘
-			│                                             ┌──┴───────────────────────┐
-			│                                             │ Vision LLM (Cerebras      │
-			│                                             │ llama-4-scout-17b model)  │
-			│                                             └──┬───────────────────────┘
-			│                             Structured JSON    │
-			│                                             ┌──┴───────────────────────┐
-			│                                             │ Chroma Vector Store       │
-			│                                             │ (granular memory docs)    │
-			│                                             └──┬───────────────────────┘
-			│                           Retrieved context    │
-			│                                             ┌──┴───────────────────────┐
-			│                                             │ Response Generation       │
-			│                                             │ (Mode-aware prompt logic) │
-			│                                             └──┬───────────────────────┘
-			│                                 Final answer   │
-			│                                             ┌──┴───────────────────────┐
-			│                                             │ TTS (Cartesia)            │
-			│                                             └──────────────────────────┘
+┌────────────────────┐
+│ React Native App   │
+│ (Camera + Mic + UI)│
+└─────────┬──────────┘
+          │  (1) Image + Audio (multipart)
+          ▼
+┌────────────────────┐
+│ FastAPI Backend    │  (Routing, validation, timing)
+└─────────┬──────────┘
+		  │  (2) Speech-to-Text (Cartesia)
+          ▼
+┌────────────────────┐
+│ Vision LLM (Groq)  │  (Multimodal understanding)
+│ meta-llama vision  │
+└─────────┬──────────┘
+          │  (3) Structured Scene JSON
+          ▼
+┌────────────────────┐          (4a) Similarity Search
+│ Chroma Vector Store│ 
+└─────────┬──────────┘                                  
+		  │  (4b) Retrieved Context (RAG)               
+          ▼                                             
+┌────────────────────┐                                  
+│ Cerebras LLM       │(Mode-aware response synthesis).  
+│ llama-4-scout text │                                  
+└─────────┬──────────┘                                  
+          │  (5) Final Answer Text                      
+          ▼                                             
+┌────────────────────┐                                  
+│ Cartesia TTS       │  (6) Audio synthesis             
+└─────────┬──────────┘                                  
+          │  (7) base64 WAV                            
+          ▼                                            
+┌────────────────────┐                                  
+│ Client Playback    │  (Voice-to-voice UX)             
+└────────────────────┘                                  
 ```
 
 ### Core Components
-- **FastAPI Backend**: Orchestrates vision parsing, retrieval, chat history, audio generation.
-- **Cerebras Vision LLM** (`llama-4-scout-17b-16e-instruct`): Multimodal reasoning on image + optional question.
-- **LangChain**: Prompt composition + structured output via `PydanticOutputParser`.
-- **Structured Scene Model**: JSON with objects, spatial layout, accessibility info, hazards, summary, answer, audio stub.
-- **Chroma Vector Store**: Granular storage (each object, obstacle, landmark, summary is a separate document) for Retrieval‑Augmented Generation.
-- **Embeddings**: HuggingFace `sentence-transformers/all-MiniLM-L6-v2` for semantic memory search.
-- **Cartesia**: Speech → text (transcription) and text → speech (natural audio generation).
-- **React Native Frontend**: Captures camera frame + mic audio, sends to backend, plays returned speech.
+- **FastAPI Backend**: Orchestrates STT → vision parsing → retrieval → response generation → TTS pipeline.
+- **Groq Vision LLM** (`meta-llama/llama-4-maverick-17b-128e-instruct` or similar): Multimodal frame understanding.
+- **Cerebras Text Generation Layer** (`llama-4-scout-17b-16e-instruct`): Crafts higher-quality, mode‑aware conversational or navigational responses.
+- **LangChain**: Prompt composition + structured parsing with `PydanticOutputParser`.
+- **Structured Scene Model**: JSON capturing objects, spatial layout, accessibility semantics, hazards, landmarks, summary, answer.
+- **Chroma Vector Store**: Granular RAG memory (object/obstacle/landmark/layout/safety note docs).
+- **Embeddings**: HuggingFace `sentence-transformers/all-MiniLM-L6-v2` for semantic recall.
+- **Cartesia**: STT + TTS for fully voice-driven loop.
+- **React Native Frontend**: Image + audio capture and low-latency playback of synthesized voice.
 
 ---
 ## 🧪 Structured Vision Output (Excerpt)
@@ -108,16 +125,14 @@ Example (fields trimmed for brevity):
 ---
 ## 🔄 Request Lifecycle (`POST /vision`)
 1. Client sends multipart form: `file` (image), `audio` (voice question), `user_id`, `chat_id`, optional `question` fallback.
-2. Audio → transcription (Cartesia). If transcription succeeds, replaces `question`.
-3. Parallel tasks:
-	 - A. Vision LLM builds structured scene memory (JSON) via prompt + parser.
-	 - B. Chroma similarity search retrieves prior relevant memory docs (RAG context).
-4. Mode‑aware response generation:
-	 - Blind: narrational + hazard‑focused.
-	 - Normal: concise conversational answer referencing context.
-5. Response + base64 WAV audio generated.
-6. Granular memory persisted asynchronously (thread) for future follow‑ups.
-7. Chat history updated per `user_id` + `chat_id`.
+2. Audio → Speech-to-Text transcription (Cartesia). (If transcription fails, fallback to provided `question` field.)
+3. Parallel execution begins:
+   - (A) Groq Vision LLM produces structured scene JSON.
+   - (B) Vector retrieval (Chroma) fetches top-k prior memory docs.
+4. Cerebras response synthesis combines: user intent + new scene JSON + retrieved context + mode rules.
+5. TTS generation (Cartesia) → base64 WAV.
+6. Memory documents stored asynchronously (thread) for future RAG enrichment.
+7. Chat history updated (`user_id` + `chat_id`).
 8. JSON returned: `answer`, `audio_base64`, `chat_history`, `processing_time`.
 
 ---
@@ -152,7 +167,7 @@ Create `.env` (see provided example):
 CEREBRAS_API_KEY=...
 GROQ_API_KEY=...          # Optional (alternate provider future use)
 CARTESIA_API_KEY=...
-AI_PROVIDER=cerebras      # (currently using llama-4-scout vision path)
+AI_PROVIDER=groq          # (vision via Groq, generation refinement via Cerebras)
 ```
 
 Logs written to `backend/logs/api_performance.log` with per‑stage timing.
@@ -228,7 +243,6 @@ Scan QR in Expo Go (device) or press `i` / `a` for iOS/Android simulators.
 - Live video stream segmentation (continuous context)
 - Low‑vision adaptive contrast overlay mode
 - Indoor navigation integration (BLE / AR anchors)
-- Personal object enrollment (“remember my blue bottle”)
 - On‑device fallback (distilled small model) for offline core tasks
 - Multi-language TTS + STT expansion
 - Scene change detection to auto-trigger capture
@@ -241,23 +255,27 @@ Scan QR in Expo Go (device) or press `i` / `a` for iOS/Android simulators.
 
 ---
 ## ⚠️ Limitations
-- Single-frame analysis (no temporal continuity yet)
-- Chat + memory are in-memory (non-persistent across restarts)
-- Assumes clear, well-lit images for best accessibility hazard detection
-- Requires network connectivity for model + TTS
+- User authentication / login & per-user persistent long-term memory not yet implemented
+- Scene analysis currently single-frame (video streaming roadmap item)
+- Assumes reasonably clear, well-lit images for optimal hazard detection
+- Requires active network connection for remote LLM + speech services
 
 ---
-## 🤝 Contribution Guidelines
-1. Fork & branch (`feature/<name>`)
-2. Add or update docstrings for new endpoints
-3. Include perf or accessibility justification in PR description
-4. Run linting & basic functional test before PR
+## 👥 Team – Vector Rush
+- Harshil Patel ✨
+- Rushikesh Vekaria 🚀
 
----
 ## 📄 License
-MIT License (see `LICENSE`)
+MIT License (see `LICENSE`).
 
----
 ## ❤️ Acknowledgements
-Built to promote inclusive, assistive AI experiences.
+### Special Thanks
+This project was made possible by the support of the following organizers and key sponsors:
 
+- FutureStack GenAI Hackathon: For organizing this exceptional event.
+
+- Cerebras: For providing powerful AI model optimization support.
+
+- Meta (Llama): For their valuable open-source contributions and developer resources.
+
+- Docker: For enabling easy containerization and seamless deployment.
